@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f0e4">
+  <meta name="description" content="RE:CLASS — Góc trao đổi đồ học đường của học sinh THPT. Tìm đúng món cần, pass lại món thương.">
+  <title>RE:CLASS · Chợ đồ học đường</title>
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/theme.js"></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Bỏ qua đến nội dung</a>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a href="/" class="brand" aria-label="RE:CLASS, trang chủ"><strong>RE:CLASS</strong><small>CHUYỂN ĐỒ CŨ · TIẾP VÒNG MỚI</small></a>
+      <nav aria-label="Điều hướng chính">
+        <a href="/">Trang chủ</a><a href="/kham-pha">Khám phá</a><a href="/#cach-hoat-dong">Cách hoạt động</a><a href="/#ve-chung-toi">Về chúng tôi</a>
+      </nav>
+      <div class="header-actions">
+        <div class="theme" role="group" aria-label="Giao diện"><button type="button" data-theme-choice="light" aria-label="Giao diện sáng"></button><button type="button" data-theme-choice="dark" aria-label="Giao diện tối"></button></div>
+        <button class="button quiet account-trigger" data-action="account">Đăng nhập</button>
+        <button class="button primary post-trigger" data-action="post">Đăng tin miễn phí <span aria-hidden="true">＋</span></button>
+      </div>
+    </div>
+    <div class="wrap search-row">
+      <div class="search-box">
+        <span class="search-icon" aria-hidden="true"></span>
+        <input type="search" id="search" aria-label="Tìm đồ học đường" placeholder="Tìm sách Toán 12, máy tính Casio, đồng phục, dụng cụ học tập…" autocomplete="off" aria-controls="search-results" aria-expanded="false" role="combobox">
+        <span class="school-filter"><select id="school-filter" aria-label="Lọc theo trường"><option value="">Trong cộng đồng THPT</option></select></span>
+      </div>
+      <div id="search-results" class="search-results" hidden></div>
+    </div>
+  </header>
+  <main id="main" tabindex="-1"></main>
+  <footer id="footer" class="site-footer"></footer>
+  <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>
