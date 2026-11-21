@@ -1,5 +1,6 @@
 import { categories, conditions, schools } from './data.js';
 import { $, html, icon, productPath, sellerPath, categoryName } from './views.js';
+import { tagsFor } from './tags.js';
 
 const button=(title,action,id='',style='secondary')=>`<button type="button" class="button ${style}" data-action="${action}" data-id="${html(id)}">${title}</button>`;
 const field=(label,name,value='',attributes='')=>`<label>${label}<input name="${name}" value="${html(value)}" ${attributes}></label>`;
@@ -12,6 +13,12 @@ const form=(name,content,submit)=>`<form data-form="${name}">${content}<p class=
 const statusNames={pending:'Chờ duyệt',active:'Đang hiển thị',hidden:'Đã ẩn',rejected:'Cần chỉnh sửa',sold:'Đã trao tay',open:'Đang trao đổi',completed:'Đã hoàn tất',cancelled:'Đã hủy'};
 const reportNames={site:'Nền tảng',listing:'Tin đăng',review:'Đánh giá',trade:'Giao dịch',appeal:'Kháng nghị'};
 const demoNames={seller:'Người bán thử',buyer:'Người mua thử',moderator:'Kiểm duyệt thử'};
+
+function tagOptions(category, selected=[]) {
+  return tagsFor(category).map(({id,label})=>
+    `<label><input type="checkbox" name="tags" value="${id}" ${selected.includes(id)?'checked':''}> <span>${html(label)}</span></label>`
+  ).join('');
+}
 
 async function jpeg(file) {
   if (file.size>15000000) throw new Error('Mỗi ảnh cần dưới 15 MB trước khi tải.');
@@ -97,10 +104,12 @@ export function createWorkflows({api,notify,getSession,setProfile,refresh}) {
     if (!profileRequired(true)) return;
     let item={};
     if (id) item=(await api('/api/listings/'+encodeURIComponent(id))).item;
+    const category=item.category||categories[0].id;
     const photos=id?'Thêm ảnh mới để thay toàn bộ ảnh hiện tại.':'Tải từ 1 đến 3 ảnh thật của món đồ.';
     open(id?'Chỉnh sửa tin':'Đăng tin miễn phí','<p>Tin sẽ được kiểm duyệt trước khi hiển thị. '+photos+' Giữ thông tin cá nhân ở ngoài ảnh và nội dung tin.</p>'+
       form('listing',field('Tên món đồ','title',item.title,'required minlength="4" maxlength="100"')+
-      select('Danh mục','category',categories.map(cat=>[cat.id,cat.name]),item.category)+
+      select('Danh mục','category',categories.map(cat=>[cat.id,cat.name]),category)+
+      `<fieldset class="post-tags"><legend>Thẻ sản phẩm (tối đa 3)</legend><div id="post-tag-options">${tagOptions(category,item.tags)}</div><p>RE:CLASS sẽ đề xuất thẻ từ mô tả nếu bạn để trống.</p></fieldset>`+
       select('Tình trạng','condition',conditions,item.condition)+
       field('Giá (đồng)','price',item.price,'required type="number" min="0" max="20000000" step="1"')+
       `<label class="check-label"><input type="checkbox" name="negotiable" ${item.negotiable?'checked':''}> Có thể thương lượng</label>`+
@@ -187,6 +196,17 @@ export function createWorkflows({api,notify,getSession,setProfile,refresh}) {
       await api('/api/moderation/reports/'+encodeURIComponent(id),{action});return moderation();
     }
   }
+  dialog.addEventListener('change',event=>{
+    const field=event.target;
+    const container=dialog.querySelector('#post-tag-options');
+    if (!container) return;
+    if (field.name==='category') container.innerHTML=tagOptions(field.value);
+    if (field.name==='tags') {
+      const tags=[...container.querySelectorAll('input')];
+      const full=tags.filter(input=>input.checked).length>=3;
+      tags.forEach(input=>{input.disabled=full&&!input.checked;});
+    }
+  });
   dialog.addEventListener('submit',async event=>{
     const current=event.target;
     if (!current.dataset.form) return;

@@ -1,5 +1,6 @@
 
 import { categories, sampleReviews } from './data.js';
+import { tag, tagsFor } from './tags.js';
 
 export const $ = selector => document.querySelector(selector);
 export const html = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -7,7 +8,13 @@ export const money = value => Number(value).toLocaleString('vi-VN') + 'đ';
 export const categoryName = id => categories.find(category => category.id === id)?.name ?? 'Đồ học đường';
 export const productPath = id => '/san-pham/' + encodeURIComponent(id);
 export const sellerPath = id => '/gian-hang/' + encodeURIComponent(id);
-export const browsePath = (category='', query='') => '/kham-pha' + (category || query ? '?' + new URLSearchParams({...(category && {danhmuc:category}),...(query && {q:query})}) : '');
+export const browsePath = (category='', query='', label='') => {
+  const params=new URLSearchParams();
+  if (category) params.set('danhmuc',category);
+  if (query) params.set('q',query);
+  if (label) params.set('the',label);
+  return '/kham-pha'+(params.size?'?'+params:'');
+};
 
 const paths={
  search:'<circle cx="10.7" cy="10.7" r="6.1"/><path d="m16 16 4 4"/>',
@@ -22,7 +29,8 @@ const paths={
  leaf:'<path d="M3 21 16 8m5-5C7 1 3 10 5 15c3 5 16 4 16-12Z"/>',
  flag:'<path d="M5 22V4m0 1c5-4 9 4 15 0v11c-6 4-10-4-15 0"/>',
  share:'<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.7 10.5 6.6-4m-6.6 7 6.6 4"/>',
- close:'<path d="m6 6 12 12M18 6 6 18"/>'
+ close:'<path d="m6 6 12 12M18 6 6 18"/>',
+ clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>'
 };
 export const icon = name => '<svg viewBox="0 0 24 24" aria-hidden="true">' + paths[name] + '</svg>';
 
@@ -32,6 +40,14 @@ const stars = rating => '<span class="stars" aria-label="' + html(rating) + ' tr
 const date = value => value ? new Date(value+'Z').toLocaleDateString('vi-VN') : '';
 const sampleTag = listing => listing.sample ? 'Tin mẫu' : date(listing.created);
 const empty = (title,description='') => '<div class="empty"><strong>' + title + '</strong>' + (description ? '<p>' + description + '</p>' : '') + '</div>';
+
+function listingTags(item, limit=3) {
+  const labels=(item.tags||[]).slice(0,limit).map(tag).filter(Boolean);
+  if (!labels.length) return '';
+  return '<div class="listing-tags" aria-label="Thẻ sản phẩm">'+labels.map(label=>
+    '<a class="product-tag-pip" href="'+browsePath(item.category,'',label.id)+'">'+html(label.label)+'</a>'
+  ).join('')+'</div>';
+}
 
 export function listingCards(items, saved) {
   if (!items.length) return empty('Chưa tìm thấy món đồ nào.', 'Thử đổi từ khóa, danh mục hoặc trường học.');
@@ -46,6 +62,7 @@ export function listingCards(items, saved) {
       <p class="price">${money(item.price)}</p>
       <p class="school">${html(item.school)}</p>
       <div class="listing-meta">${verified(item)}<span>${html(sampleTag(item))}</span></div>
+      ${listingTags(item,2)}
     </article>`).join('')+'</div>';
 }
 
@@ -73,7 +90,7 @@ const steps=[
  'Xác nhận & đánh giá|Uy tín đến từ giao dịch được hai bên xác nhận.'
 ];
 
-export function home(items, saved, featured) {
+export function home(items, saved, featured, recent=[]) {
   const sampleFeatured=items.filter(item=>!featured || item.category===featured).slice(0,4);
   return `
   <section class="hero">
@@ -101,6 +118,7 @@ export function home(items, saved, featured) {
     <div id="featured-pills">${pills(featured,'featured')}</div><div id="featured-list">${listingCards(sampleFeatured,saved)}</div>
     <p class="small-note">Xem ảnh, tình trạng và thông tin người bán trước khi quyết định.</p>
   </div></section>
+  ${recent.length?`<section class="section recent-listings"><div class="wrap"><div class="section-head"><h2>Đã xem gần đây</h2><button class="button quiet" data-action="clear-views">Xóa lịch sử</button></div>${listingCards(recent,saved)}</div></section>`:''}
   <section class="section why" id="ve-chung-toi"><div class="wrap why-grid">
     <div><p class="eyebrow">Những người yêu đồ cũ</p><h2>Cùng trường, cùng chất.<br>Cùng giữ những điều còn tốt.</h2><p class="hero-lede">RE:CLASS là dự án của một nhóm học sinh THPT. Chúng mình muốn những món đồ còn tốt tìm được người cần, để tiết kiệm hơn và kết nối thêm trong cộng đồng.</p><button class="button primary" data-action="about">Câu chuyện RE:CLASS</button></div>
     <ul class="why-list">
@@ -116,13 +134,34 @@ export function home(items, saved, featured) {
   <section class="cta"><div class="wrap"><div><p class="eyebrow">Góc nhỏ cho một vòng đời dài hơn</p><h2>Đồ còn tốt. Đừng để nằm yên.</h2><p>Bắt đầu từ một món đồ, cùng xây cộng đồng học đường biết sẻ chia.</p></div><button class="button dark" data-action="post">Pass món đồ đầu tiên</button></div></section>`;
 }
 
-export function catalog(items, saved, filters) {
-  return `<section class="section wrap"><div class="section-head"><div><p class="eyebrow">Chợ đồ học đường</p><h1>${filters.saved ? 'Tin đã lưu' : 'Khám phá'}</h1><p id="catalog-count">${catalogCount(items,filters.query)}</p></div>${filters.saved?'':'<a class="button secondary" href="/da-luu">Tin đã lưu</a>'}</div>
-    <div class="catalog-controls"><div id="catalog-pills">${pills(filters.category,'filter')}</div><select id="sort" aria-label="Sắp xếp"><option value="new">Mới nhất</option><option value="low">Giá thấp trước</option><option value="high">Giá cao trước</option></select></div>
-    <div id="catalog-list">${listingCards(items,saved)}</div>
+const featuredTags=['on-thi','may-tinh','ao-trang','cau-long','balo-va-tui','ngoai-ngu','but-va-vo'];
+export function catalogTagFilters(category, current) {
+  const tags=category?tagsFor(category):featuredTags.map(tag);
+  if (!tags.length) return '';
+  return `<div class="catalog-tags" role="group" aria-label="Thẻ sản phẩm"><span>Thẻ</span>${tags.map(label=>
+    `<button class="product-tag-pip" data-action="tag-filter" data-id="${label.id}" aria-pressed="${current===label.id}">${html(label.label)}</button>`).join('')}</div>`;
+}
+
+export function catalog(filters) {
+  return `<section class="section wrap"><div class="section-head"><div><p class="eyebrow">Chợ đồ học đường</p><h1>${filters.saved ? 'Tin đã lưu' : 'Khám phá'}</h1><p id="catalog-count" role="status" aria-atomic="true"></p></div>${filters.saved?'':'<a class="button secondary" href="/da-luu">Tin đã lưu</a>'}</div>
+    <div class="catalog-controls">
+      <div id="catalog-pills">${pills(filters.category,'filter')}</div>
+      <div class="catalog-selects">
+        <select id="condition" aria-label="Tình trạng"><option value="">Mọi tình trạng</option><option>Như mới</option><option>Còn tốt</option><option>Có ghi chú</option></select>
+        <select id="budget" aria-label="Ngân sách"><option value="">Mọi mức giá</option><option value="50000">Đến 50.000đ</option><option value="100000">Đến 100.000đ</option><option value="200000">Đến 200.000đ</option></select>
+        <select id="sort" aria-label="Sắp xếp"><option value="">Phù hợp nhất</option><option value="new">Mới nhất</option><option value="low">Giá thấp trước</option><option value="high">Giá cao trước</option></select>
+      </div>
+    </div>
+    <div class="catalog-filterbar"><div id="catalog-tags">${catalogTagFilters(filters.category,filters.tag)}</div><button type="button" class="bare clear-filters" data-action="clear-filters" hidden>Xóa bộ lọc</button></div>
+    <div id="catalog-list"></div>
+    <div class="catalog-more"><button class="button secondary" data-action="load-more" hidden>Xem thêm</button></div>
   </section>`;
 }
-export function catalogCount(items, query) { return items.length+' tin đăng'+(query?' cho “'+html(query)+'”':''); }
+export function catalogCount(length, query) { return length+' tin đăng'+(query?' cho “'+query+'”':''); }
+
+export function pageLoading() {
+  return '<section class="section wrap loading-page" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>Đang tải…</span></section>';
+}
 
 function sellerBox(seller, open) {
   return `<aside class="seller-box"><header>${avatar(seller)}<div><strong>${html(seller.shop)}</strong><div class="listing-meta">${verified(seller)}</div></div></header>
@@ -158,6 +197,7 @@ export function detail(listing, seller, reviews, related, saved, open, signed) {
       <h1>${html(listing.title)}</h1><p>${calc?'Một người bạn đồng hành cho những giờ Toán, Lý và mùa ôn thi sắp tới.':html(listing.description.slice(0,145))}</p>
       <div class="detail-price"><p class="price">${money(listing.price)}</p>${listing.negotiable||listing.sample?'<span class="badge">Có thương lượng</span>':''}</div>
       <dl class="specs"><dt>Tình trạng</dt><dd>${html(listing.condition)}${calc?' · Các phím hoạt động bình thường':''}</dd><dt>Khu vực</dt><dd>${html(listing.school)}</dd><dt>Giao nhận</dt><dd>Thỏa thuận trực tiếp với người bán</dd><dt>Đăng tin</dt><dd>${html(sampleTag(listing))}</dd></dl>
+      ${listingTags(listing)}
       <a class="seller-mini" href="${sellerPath(seller.id)}">${avatar(seller)}<span><strong>${html(seller.name)}</strong><small>${verified(seller)}</small></span>${seller.rating?'<span class="price">'+Number(seller.rating).toLocaleString('vi-VN',{maximumFractionDigits:1})+' ★</span>':''}</a>
       <div class="detail-actions"><button class="button primary" data-action="${own?'edit':'contact'}" data-id="${html(listing.id)}" ${sold||(!own&&!available)?'disabled':''}>${primaryText}</button><button class="button secondary save-detail" data-action="save" data-id="${html(listing.id)}" aria-pressed="${saved.has(listing.id)}">${icon('heart')} <span>${saved.has(listing.id)?'Đã lưu':'Lưu tin'}</span></button></div>
       <p class="small-note">Kiểm tra món đồ và thống nhất địa điểm gặp trước khi giao dịch.</p>
@@ -166,14 +206,16 @@ export function detail(listing, seller, reviews, related, saved, open, signed) {
   </div></div>
   <section class="section detail-body"><div class="wrap detail-body-grid">
     <div><div class="tabs" role="tablist" aria-label="Thông tin sản phẩm"><button role="tab" id="tab-description" data-action="tab" data-id="description" aria-controls="panel-description" aria-selected="true">Mô tả sản phẩm</button><button role="tab" id="tab-delivery" data-action="tab" data-id="delivery" aria-controls="panel-delivery" aria-selected="false" tabindex="-1">Giao nhận</button><button role="tab" id="tab-reviews" data-action="tab" data-id="reviews" aria-controls="panel-reviews" aria-selected="false" tabindex="-1">Đánh giá người bán (${reviews.length})</button></div>
-    <div class="tab-panel" role="tabpanel" id="panel-description" aria-labelledby="tab-description"><h2>${calc?'Vẫn tốt cho những bài toán tiếp theo.':'Thông tin món đồ'}</h2><p class="preserve-lines">${html(listing.description)}</p>
+    <div class="tab-stage">
+    <div class="tab-loader" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="tab-panel" role="tabpanel" id="panel-description" aria-labelledby="tab-description" tabindex="0"><h2>${calc?'Vẫn tốt cho những bài toán tiếp theo.':'Thông tin món đồ'}</h2><p class="preserve-lines">${html(listing.description)}</p>
       ${calc?'<ul><li>Có vết xước nhẹ ở mặt sau do sử dụng.</li><li>Các phím bấm và màn hình hoạt động bình thường.</li><li>Bạn có thể kiểm tra máy trước khi nhận.</li></ul>':''}
       <div class="inline-box"><h3>Hẹn nhận thế nào?</h3><p class="preserve-lines">${html(listing.delivery)}</p></div>
       ${reviews.length?`<div class="recent-review"><h3>Gần đây từ người mua</h3>${reviewList(reviews.slice(0,1))}</div>`:''}
     </div>
-    <div class="tab-panel" role="tabpanel" id="panel-delivery" aria-labelledby="tab-delivery" hidden><h2>Giao nhận</h2><p class="preserve-lines">${html(listing.delivery)}</p><p>Hai bên có thể hẹn tại nơi công cộng phù hợp và kiểm tra đồ khi nhận.</p></div>
-    <div class="tab-panel" role="tabpanel" id="panel-reviews" aria-labelledby="tab-reviews" hidden><h2>Đánh giá người bán</h2>${reviewList(reviews)}</div>
-    </div>${sellerBox(seller,open)}
+    <div class="tab-panel" role="tabpanel" id="panel-delivery" aria-labelledby="tab-delivery" tabindex="0" hidden><h2>Giao nhận</h2><p class="preserve-lines">${html(listing.delivery)}</p><p>Hai bên có thể hẹn tại nơi công cộng phù hợp và kiểm tra đồ khi nhận.</p></div>
+    <div class="tab-panel" role="tabpanel" id="panel-reviews" aria-labelledby="tab-reviews" tabindex="0" hidden><h2>Đánh giá người bán</h2>${reviewList(reviews)}</div>
+    </div></div>${sellerBox(seller,open)}
   </div></section>
   ${safetyBand()}
   <section class="section"><div class="wrap"><div class="section-head"><h2>Có thể bạn cũng cần</h2><a class="button quiet" href="/kham-pha">Khám phá thêm</a></div>${listingCards(related,saved)}</div></section>`;

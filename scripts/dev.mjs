@@ -12,12 +12,20 @@ const worker=(await import('../dist/server/index.js')).default;
 await mkdir('.local',{recursive:true});
 const sqlite=new DatabaseSync('.local/dev.db',{enableForeignKeyConstraints:true});
 sqlite.exec('CREATE TABLE IF NOT EXISTS _local_schema (migration TEXT PRIMARY KEY)');
-const migration='0000_marketplace';
-if (!sqlite.prepare('SELECT migration FROM _local_schema WHERE migration=?').get(migration)) {
-  sqlite.exec('BEGIN');
-  sqlite.exec(await readFile('drizzle/'+migration+'.sql','utf8'));
-  sqlite.prepare('INSERT INTO _local_schema VALUES (?)').run(migration);
-  sqlite.exec('COMMIT');
+const {entries:migrations}=JSON.parse(await readFile('drizzle/meta/_journal.json','utf8'));
+for (const {tag:migration} of migrations) {
+  const statements=await readFile('drizzle/'+migration+'.sql','utf8');
+  sqlite.exec('BEGIN IMMEDIATE');
+  try {
+    if (!sqlite.prepare('SELECT migration FROM _local_schema WHERE migration=?').get(migration)) {
+      sqlite.exec(statements);
+      sqlite.prepare('INSERT INTO _local_schema VALUES (?)').run(migration);
+    }
+    sqlite.exec('COMMIT');
+  } catch (error) {
+    sqlite.exec('ROLLBACK');
+    throw error;
+  }
 }
 function prepare(query) {
   const compiled=sqlite.prepare(query);

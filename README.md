@@ -7,6 +7,7 @@ RE:CLASS là chợ trao đổi đồ học đường dành cho học sinh THPT. 
 Cần Node.js 24 trở lên.
 
 ```powershell
+Set-Location 'C:\ytkn\reclass'
 npm.cmd ci
 npm.cmd run dev
 ```

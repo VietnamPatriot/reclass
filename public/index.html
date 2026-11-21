@@ -8,10 +8,12 @@
   <title>RE:CLASS · Chợ đồ học đường</title>
   <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
+  <link rel="modulepreload" href="/app.js">
   <script src="/theme.js"></script>
   <script type="module" src="/app.js"></script>
 </head>
 <body>
+  <div class="page-progress" aria-hidden="true"></div>
   <a class="skip" href="#main">Bỏ qua đến nội dung</a>
   <header class="site-header">
     <div class="wrap header-row">
@@ -28,13 +30,16 @@
     <div class="wrap search-row">
       <div class="search-box">
         <span class="search-icon" aria-hidden="true"></span>
-        <input type="search" id="search" aria-label="Tìm đồ học đường" placeholder="Tìm sách Toán 12, máy tính Casio, đồng phục, dụng cụ học tập…" autocomplete="off" aria-controls="search-results" aria-expanded="false" role="combobox">
-        <span class="school-filter"><select id="school-filter" aria-label="Lọc theo trường"><option value="">Trong cộng đồng THPT</option></select></span>
+        <input type="search" id="search" aria-label="Tìm đồ học đường" placeholder="Tìm sách Toán 12" maxlength="100" autocomplete="off" aria-autocomplete="list" aria-controls="search-options" aria-expanded="false" role="combobox">
+        <span class="school-filter"><select id="school-filter" aria-label="Lọc theo trường"><option value="">Mọi trường</option></select></span>
       </div>
-      <div id="search-results" class="search-results" hidden></div>
+      <div id="search-results" class="search-results" hidden>
+        <div class="search-results-heading"><p id="search-title">Gợi ý tìm kiếm</p><button type="button" class="bare" id="clear-recent-searches" hidden>Xóa lịch sử</button></div>
+        <ul id="search-options" role="listbox" aria-labelledby="search-title"></ul>
+      </div>
     </div>
   </header>
-  <main id="main" tabindex="-1"></main>
+  <main id="main" tabindex="-1"><section class="section wrap loading-page" role="status"><span class="loading-spinner" aria-hidden="true"></span><span>Đang tải…</span></section></main>
   <footer id="footer" class="site-footer"></footer>
   <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
   <div class="toast" id="toast" role="status" hidden></div>

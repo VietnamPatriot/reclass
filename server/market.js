@@ -1,4 +1,5 @@
 import { categories, conditions, schools, sampleListings, sampleSellers, sampleReviews } from '../public/data.js';
+import { inferredTags, tagsFor } from '../public/tags.js';
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -36,11 +37,15 @@ const photoUrl = (id,key) => '/photos/'+id+'/'+key;
 export const listingFields = 'l.*, p.name AS seller, p.school, p.verified';
 const listingQuery = 'SELECT '+listingFields+' FROM listings l JOIN profiles p ON p.id=l.seller_id';
 export const dbListing = (db,id) => first(db,listingQuery+' WHERE l.id=?',id);
+function listingTags(row) {
+  const tags=JSON.parse(row.tags||'[]');
+  return tags.length ? tags : inferredTags(row.category,row.title,row.description);
+}
 export const publicListing = row => ({
   id:row.id,sellerId:row.seller_id,seller:row.seller,school:row.school,verified:!!row.verified,
   title:row.title,category:row.category,condition:row.condition,price:row.price,negotiable:!!row.negotiable,
   description:row.description,delivery:row.delivery,images:JSON.parse(row.images).map(key=>photoUrl(row.id,key)),
-  status:row.status,created:row.created
+  status:row.status,created:row.created,tags:listingTags(row)
 });
 const publicProfile = row => ({id:row.id,name:row.name,school:row.school,shop:row.shop,bio:row.bio,verified:!!row.verified});
 export const ownProfile = row => row ? {...publicProfile(row),moderator:!!row.moderator} : null;
@@ -138,6 +143,10 @@ export async function saveListing(env,profile,request,id) {
   need(form.get('price')!==''&&form.get('price')!==null&&Number.isSafeInteger(price)&&price>=0&&price<=20000000,400,'Giá phải từ 0 đến 20.000.000đ.');
   const description=textField(form.get('description'),'Mô tả',15,1500);
   const delivery=textField(form.get('delivery'),'Giao nhận',8,350);
+  const selectedTags=[...new Set(form.getAll('tags'))];
+  const validTags=new Set(tagsFor(category).map(item=>item.id));
+  need(selectedTags.length<=3&&selectedTags.every(id=>validTags.has(id)),400,'Chọn tối đa 3 thẻ trong đúng danh mục.');
+  const tags=JSON.stringify(selectedTags.length?selectedTags:inferredTags(category,title,description));
   const negotiable=Number(form.get('negotiable')==='on');
   const photos=form.getAll('photos').filter(file=>typeof file==='object'&&file.size);
   need((previous||photos.length)&&photos.length<=3,400,'Hãy thêm từ 1 đến 3 ảnh thật.');
@@ -160,10 +169,10 @@ export async function saveListing(env,profile,request,id) {
     }
     const images=JSON.stringify(newKeys.length?newKeys:oldKeys);
     if (previous) {
-      const saved=await run(db,"UPDATE listings SET title=?,category=?,condition=?,price=?,negotiable=?,description=?,delivery=?,images=?,status='pending',reason='',updated=? WHERE id=? AND updated=? AND status<>'sold'",title,category,condition,price,negotiable,description,delivery,images,updated,id,previous.updated);
+      const saved=await run(db,"UPDATE listings SET title=?,category=?,condition=?,price=?,negotiable=?,description=?,delivery=?,images=?,tags=?,status='pending',reason='',updated=? WHERE id=? AND updated=? AND status<>'sold'",title,category,condition,price,negotiable,description,delivery,images,tags,updated,id,previous.updated);
       need(saved.meta.changes===1,409,'Tin đăng đã thay đổi. Hãy tải lại và thử lại.');
     } else {
-      await run(db,'INSERT INTO listings (id,seller_id,title,category,condition,price,negotiable,description,delivery,images,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?)',listingId,profile.id,title,category,condition,price,negotiable,description,delivery,images,updated);
+      await run(db,'INSERT INTO listings (id,seller_id,title,category,condition,price,negotiable,description,delivery,images,tags,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',listingId,profile.id,title,category,condition,price,negotiable,description,delivery,images,tags,updated);
     }
   } catch (error) {
     await Promise.allSettled(newKeys.map(key=>env.BUCKET.delete(listingId+'/'+key)));
