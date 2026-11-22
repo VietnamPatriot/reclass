@@ -25,6 +25,19 @@ export const sampleReviews = [
   { id:'sample-review-2', seller:'minh-anh', author:'Gia Huy', label:'Lớp 11 · THPT Nguyễn Thị Minh Khai', rating:5, text:'Tìm được bộ sách ôn thi vừa túi tiền. Những ghi chú của bạn khóa trên còn giúp mình học tốt hơn!' },
   { id:'sample-review-3', seller:'khanh-linh', author:'Khánh Linh', label:'Lớp 10 · THPT Trần Phú', rating:5, text:'Có thông tin tình trạng và đánh giá giao dịch nên mình dễ cân nhắc trước khi nhắn cho người bán.' }
 ];
+export function reviewSummary(reviews) {
+  const ratingCount=reviews.length;
+  return {ratingCount,rating:ratingCount?reviews.reduce((sum,review)=>sum+review.rating,0)/ratingCount:null};
+}
+
+const sampleOffers = {
+  'may-tinh-khoa-hoc': {price:148000,endsAt:'2026-11-30T16:59:00Z'},
+  'sach-on-tap-toan-12': {price:36000,endsAt:'2026-11-27T16:59:00Z'},
+  'vot-cau-long': {price:76000,endsAt:'2026-11-28T16:59:00Z'},
+  'balo-xanh-olive': {price:82500,endsAt:'2026-12-01T16:59:00Z'},
+  'den-hoc-led': {price:90000,endsAt:'2026-12-02T16:59:00Z'}
+};
+const demoRatings=new Map(sampleSellers.map(seller=>[seller.id,reviewSummary(sampleReviews.filter(review=>review.seller===seller.id))]));
 const products = [
   ['may-tinh-khoa-hoc','Máy tính khoa học','dung-cu','Còn tốt',185000,'gia-huy',['calculator','calculator-2'],'Mua để dùng học Toán, Lý và ôn thi. Máy hoạt động bình thường, các phím còn nhạy và màn hình hiển thị rõ. Có vài vết xước nhẹ do sử dụng. Có thể kiểm tra máy trước khi nhận.','casio máy tính fx'],
   ['bo-sach-va-so-tay','Bộ sách & sổ tay học tập','sach','Có ghi chú',65000,'minh-anh',['books'],'Một bộ sách ôn Toán và sổ tay dành cho mùa thi. Sách còn đủ trang, có một vài ghi chú bằng bút chì.','toán 12 sách giáo khoa tài liệu'],
@@ -53,6 +66,7 @@ const products = [
 export const sampleListings = products.map(([id,title,category,condition,price,sellerId,images,description,keywords]) => {
   const seller=sampleSellers.find(person=>person.id===sellerId);
   return {id,title,category,condition,price,sellerId,seller:seller.name,school:seller.school,verified:true,
+    ...demoRatings.get(sellerId),...(sampleOffers[id]&&{offer:sampleOffers[id]}),
     images:images.map(image=>'/assets/'+image+'.jpg'),description,keywords,tags:inferredTags(category,title,keywords,description),
     delivery:'Hẹn tại khu vực công cộng gần trường.',sample:true,status:'active'};
 });

@@ -1,6 +1,6 @@
-import { popularSearches } from './data.js';
-import { normalize } from './tags.js';
-import { suggestionsFor } from './search.js';
+import { popularSearches } from './catalog/data.js';
+import { normalize } from './catalog/tags.js';
+import { suggestionsFor } from './catalog/search.js';
 import { $, html, icon } from './views.js';
 
 export function readList(key) {

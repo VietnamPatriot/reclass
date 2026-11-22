@@ -1,0 +1,166 @@
+.auth-page{background:var(--hero);padding:2.5rem 0 4rem}
+.auth-layout{display:grid;grid-template-columns:46% 54%;border:1px solid var(--line);border-radius:1rem;overflow:hidden}
+.auth-story,.auth-card{min-width:0;padding:clamp(1.5rem,3.6vw,2.75rem)}
+.auth-card{background:var(--paper);padding-inline:clamp(1.5rem,4.5vw,4rem)}
+.auth-story h2{font-size:clamp(2rem,3vw,2.75rem);margin:1.45rem 0 1.2rem}
+.auth-card h1,.account-heading h1{font-size:clamp(2rem,3vw,2.9rem)}
+.auth-card h1{margin:1.35rem 0 .6rem}
+.auth-story>p:not(.eyebrow,.display),.auth-card>p:not(.eyebrow){color:var(--muted)}
+.auth-story img{width:100%;aspect-ratio:1.57;border-radius:.7rem;margin:1.2rem 0;background:var(--wash)}
+.auth-story .display{font-size:1.45rem}
+.auth-points{display:flex;flex-wrap:wrap;gap:.5rem 1rem;color:var(--olive);font-size:.8rem;margin-top:1rem}
+.auth-points span{display:flex;align-items:center;gap:.2rem}
+.auth-card form,.account-panel form{display:grid;gap:.95rem;margin-top:1.6rem}
+.auth-card label,.account-panel label{display:grid;gap:.3rem;font-size:.875rem;font-weight:600}
+.auth-card input,.auth-card select,.account-panel form input,.account-panel textarea,.account-panel form select{
+  width:100%;min-width:0;border:1px solid var(--line);border-radius:.35rem;background-color:var(--paper);color:var(--ink);
+  padding:.65rem .85rem;min-height:3rem;font-size:1rem;font-weight:400;
+}
+.auth-card select,.account-panel form select{padding-right:2rem}
+.account-panel textarea{min-height:7rem;resize:vertical}
+.account-panel input[readonly]{background-color:var(--soft);color:var(--muted)}
+.auth-card label small,.student-fields p{font-size:.8rem;color:var(--muted);font-weight:400}
+.password-field{position:relative}
+.password-field input{padding-right:4.4rem!important}
+.password-field>.bare{position:absolute;right:.3rem;bottom:.2rem;min-width:3.1rem;min-height:2.4rem;font-size:.8rem;color:var(--muted)}
+.auth-help{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:space-between}
+.auth-help .button{white-space:normal;padding-inline:0;color:var(--muted);font-size:.8rem}
+.auth-card form>.primary{min-height:3rem}
+.auth-card .auth-switch{text-align:center;margin:1.25rem 0;font-size:.9rem}
+.auth-switch a,.account-identity a{font-weight:700;color:var(--ink);text-decoration:underline;text-underline-offset:.18em}
+.auth-card .account-notice{margin-top:1.25rem}
+.student-fields{min-width:0;display:grid;gap:.7rem;border:1px solid var(--line);border-radius:.45rem;padding:.85rem;margin:0}
+.student-fields legend{padding:0 .3rem;font-size:.875rem;font-weight:700}
+.student-fields p{margin-bottom:.2rem}
+.student-fields input[type=file]{font-size:.85rem}
+.profile-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;min-width:0}
+
+.account-wrap{padding-bottom:clamp(2.5rem,5vw,4.5rem)}
+.account-layout{display:grid;grid-template-columns:minmax(11.5rem,15rem) minmax(0,1fr);gap:2rem;align-items:start}
+.account-layout.account-guest{grid-template-columns:1fr}
+.account-content{min-width:0;display:grid;gap:1.5rem}
+.account-content>p.loading-page{min-height:9rem;padding:0}
+.account-heading{display:flex;align-items:start;justify-content:space-between;gap:1rem}
+.account-heading p:last-child:not(.eyebrow){color:var(--muted);margin-top:.6rem}
+.account-sidebar{display:grid;gap:1.25rem;min-width:0}
+.account-identity,.account-panel,.account-tip,.cart-summary,.account-rating{border-radius:.65rem;padding:1.5rem}
+.account-identity,.cart-summary,.account-rating{background:var(--hero)}
+.account-identity .avatar{width:4rem;height:4rem;font-size:1.15rem}
+.account-identity h2{font:700 1.06rem/1.35 var(--body);letter-spacing:0;margin:.7rem 0}
+.account-identity p,.account-identity .verified,.account-identity a{font-size:.8rem;overflow-wrap:anywhere}
+.account-identity p{margin:.65rem 0;color:var(--muted)}
+.account-identity .button{white-space:normal;text-align:center;margin-top:.4rem}
+.account-nav{display:grid;gap:.55rem}
+.account-nav p{font-size:.72rem;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:.3rem}
+.account-nav a{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.62rem .75rem;min-height:2.75rem;font-size:.84rem;border-radius:.35rem}
+.account-nav a:hover,.account-nav a[aria-current=page]{background:var(--hero)}
+.account-nav a span{color:var(--muted);font-size:.75rem}
+.account-tools{display:flex;flex-wrap:wrap;gap:.22rem}
+.account-tools .button{padding-inline:.55rem;font-size:.81rem}
+.account-tip{background:var(--sage);color:var(--olive)}
+.account-tip h2{font-size:1.35rem;color:var(--ink);margin-bottom:.65rem}
+.account-tip p,.account-notice p{font-size:.875rem}
+.account-notice{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:.5rem;background:var(--hero);padding:.9rem 1rem;border-radius:.45rem;color:var(--muted)}
+.account-notice strong{color:var(--ink)}
+.account-notice p{margin:0}
+.account-notice .button{flex:none}
+.account-panel{border:1px solid var(--line);background:var(--paper);min-width:0}
+.account-panel h2,.cart-summary h2,.account-corners h2{font-size:clamp(1.42rem,2vw,1.85rem)}
+.account-panel>h2+*{margin-top:1rem}
+.account-panel .profile-heading{margin-bottom:0}
+.account-panel .profile-heading p{color:var(--muted);font-size:.82rem}
+.account-panel form>.button{justify-self:end}
+.account-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;margin:1rem 0 0}
+.account-facts dt,.account-metrics small,.account-row-body p,.cart-school,.cart-summary p:not(.display,.eyebrow){color:var(--muted);font-size:.82rem}
+.account-facts dd{margin:0;overflow-wrap:anywhere}
+.account-metrics,.account-corners{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr));gap:1rem}
+.account-metrics>div,.account-corners>section{border:1px solid var(--line);border-radius:.65rem;padding:1.2rem 1.5rem;min-width:0}
+.account-metrics strong{display:block;font-size:clamp(1.4rem,2.35vw,2.15rem);font-variant-numeric:tabular-nums}
+.account-metrics p{font-weight:700;font-size:.875rem;margin-top:.45rem}
+.account-metrics>div:last-child,.metrics-filled>div{background:var(--hero)}
+.account-corners>section{background:var(--sage);border:0}
+.account-corners>section+section{background:var(--navy);color:var(--white)}
+.account-corners>section+section .eyebrow{color:var(--gold)}
+.account-corners p:not(.eyebrow){font-size:.86rem;margin:.8rem 0}
+.account-corners .button{display:flex;width:100%}
+.account-corners .button.subtle{background:var(--paper)}
+.account-tabs{display:flex;flex-wrap:wrap;justify-content:start;width:auto;gap:.5rem;padding:0}
+.account-tabs a{background:var(--soft);color:var(--ink);padding:.65rem .8rem;border-radius:.35rem;font-size:.83rem;min-height:2.75rem}
+.account-tabs a:hover,.account-tabs a[aria-current=page]{background:var(--charcoal);color:var(--white)}
+:root[data-theme=dark] .account-tabs a:hover,:root[data-theme=dark] .account-tabs a[aria-current=page]{background:var(--gold);color:#292719}
+.account-rows{display:grid;gap:1rem;min-width:0}
+.account-row{min-width:0}
+.account-row-head{display:flex;justify-content:space-between;align-items:center;gap:.8rem}
+.account-row-head strong{font-size:.88rem}
+.account-row-body{display:flex;align-items:center;gap:1rem;margin:.85rem 0}
+.account-row-body img{width:5.5rem;aspect-ratio:1;border-radius:.35rem;flex:none;background:var(--wash)}
+.account-row-body h3{overflow-wrap:anywhere}
+.account-row-body h3 a:hover{text-decoration:underline}
+.account-row-body .price{color:var(--gold-text);font-size:1rem;margin-top:.25rem}
+.account-row .row-actions{justify-content:flex-end}
+.account-row .button,.cart-item .button{white-space:normal}
+.listing-rows .account-row{display:flex;align-items:center;justify-content:space-between;gap:.6rem;border-bottom:1px solid var(--line);padding-bottom:.6rem}
+.listing-rows .account-row:last-child{border:0;padding:0}
+.listing-rows .account-row>div:last-child{flex:none;text-align:right}
+.listing-rows .row-actions{margin-top:.4rem}
+.storefront .account-identity .avatar{width:5.75rem;height:5.75rem;font-size:1.5rem}
+.storefront .account-identity h2{font-family:var(--heading);font-size:1.5rem;font-weight:400}
+.storefront .stats{display:grid;gap:.65rem;margin:0}
+.storefront .listing-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.storefront .listing{padding:1rem;border:1px solid var(--line);border-radius:.65rem}
+.storefront .listing-visual img{aspect-ratio:1.9}
+.account-rating{display:grid;grid-template-columns:minmax(10rem,.7fr) minmax(0,2fr);gap:1.25rem;align-items:center}
+.account-rating strong{display:block;font-size:2.5rem}
+.account-rating p,.rating-line{font-size:.8rem;color:var(--muted)}
+.rating-line{display:grid;grid-template-columns:2rem minmax(0,1fr) 1.4rem;align-items:center;gap:.35rem}
+.rating-line meter{width:100%;height:.85rem;accent-color:var(--gold-text)}
+.rating-line meter::-webkit-meter-optimum-value{background:var(--gold-text)}
+.cart-toolbar{display:flex;align-items:center;justify-content:space-between;gap:.5rem;background:var(--soft);border-radius:.35rem;padding:.4rem .75rem}
+.cart-toolbar label,.cart-item label{display:flex;align-items:center;gap:.45rem;font-size:.88rem;font-weight:700}
+.cart-toolbar input,.cart-item input{width:1.1rem;height:1.1rem;accent-color:var(--olive)}
+.cart-grid{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(15rem,1fr);align-items:start;gap:1.25rem}
+.cart-item .account-row-body img{width:7rem}
+.cart-item .cart-school{margin-top:.35rem}
+.cart-item .row-actions{justify-content:flex-end}
+.cart-item .row-actions [data-action=contact]{margin-right:auto}
+.cart-summary dl{display:grid;gap:.7rem;margin:1rem 0}
+.cart-summary dl div{display:flex;justify-content:space-between;gap:.55rem;font-size:.875rem}
+.cart-summary dt{color:var(--muted)}
+.cart-summary dd{margin:0;text-align:right}
+.cart-summary .display{font-size:2rem}
+.cart-summary .button.primary{width:100%;margin:.85rem 0}
+.cart-summary .button.quiet{padding-inline:0}
+
+@media(max-width:960px){
+  .account-layout{gap:1.25rem;grid-template-columns:minmax(10.5rem,12rem) minmax(0,1fr)}
+  .cart-grid{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  .auth-layout,.account-layout{grid-template-columns:1fr}
+  .auth-card{grid-row:1}
+  .auth-story h2{font-size:2.15rem}
+  .account-nav{display:flex;gap:.35rem;overflow-x:auto;padding:.3rem;scrollbar-width:thin}
+  .account-nav>div{display:contents}
+  .account-nav p{display:none}
+  .account-nav a{flex:none;padding-inline:.65rem;white-space:nowrap}
+  .account-layout:not(.storefront) .account-identity{display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:.8rem}
+  .account-layout:not(.storefront) .account-identity .avatar{grid-row:span 3;width:3rem;height:3rem}
+  .account-layout:not(.storefront) .account-identity :is(h2,p){margin:.1rem 0}
+  .account-layout:not(.storefront) .account-identity>a,.account-layout:not(.storefront) .account-identity>.button{grid-column:2;justify-self:start;margin-top:.35rem}
+  .account-sidebar .account-tip{display:none}
+  .storefront .account-sidebar{grid-template-columns:1fr 1fr}
+  .account-content,.account-sidebar{gap:1rem}
+}
+@media(max-width:530px){
+  .auth-page{padding:1rem 0 2rem}
+  .account-heading{flex-wrap:wrap}
+  .account-identity,.account-panel,.account-tip,.cart-summary,.account-rating{padding:1rem}
+  .profile-fields,.account-rating,.storefront .account-sidebar,.storefront .listing-grid{grid-template-columns:1fr}
+  .account-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .account-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .account-metrics>div,.account-corners>section{padding:1rem}
+  .listing-rows .account-row{flex-wrap:wrap}
+  .listing-rows .account-row>div:last-child{text-align:left}
+  .cart-item .account-row-body img{width:4.5rem}
+  .cart-toolbar .button{white-space:normal}
+}

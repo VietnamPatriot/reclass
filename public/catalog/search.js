@@ -1,5 +1,6 @@
 import { categories, popularSearches } from './data.js';
 import { normalize, tag, tagsFor } from './tags.js';
+import { effectivePrice } from './offers.js';
 
 const words = value => normalize(value).split(' ').filter(Boolean);
 const categoryNames = Object.fromEntries(categories.map(({id,name})=>[id,name]));
@@ -51,8 +52,9 @@ export function indexListings(listings) {
 export function rankListings(index, query) {
   const {terms,max}=parseQuery(query);
   const matches=[];
+  const now=Date.now();
   for (const record of index) {
-    if (record.item.price>max) continue;
+    if (effectivePrice(record.item,now)>max) continue;
     const hits=terms.map(term=>{
       const primary=tokenScore(term,record.primary,true);
       const secondary=tokenScore(term,record.secondary,true);

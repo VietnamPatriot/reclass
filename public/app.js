@@ -1,12 +1,14 @@
-import { categories, conditions, schools, sampleListings, sampleSellers, sampleReviews } from './data.js';
+import { categories, conditions, schools, sampleListings, sampleSellers, sampleReviews, reviewSummary } from './catalog/data.js';
 import {
-  $, icon, browsePath, catalogTagFilters, catalogCount, listingCards, footer, home,
-  detail, catalog, storefront, unavailable, pageLoading
+  $, icon, money, browsePath, catalogTagFilters, catalogCount, listingCards, footer, home,
+  detail, catalog, storefront, unavailable, pageLoading, priceFilterLabel
 } from './views.js';
-import { categoryForTag } from './tags.js';
-import { indexListings, rankListings, suggestionPool } from './search.js';
+import { categoryForTag } from './catalog/tags.js';
+import { activeOffer, countdown, effectivePrice, priceLimit } from './catalog/offers.js';
+import { indexListings, rankListings, suggestionPool } from './catalog/search.js';
 import { initAutocomplete, readList, storeList } from './autocomplete.js';
 import { createWorkflows } from './workflows.js';
+import { accountPage, authPage, cartPage } from './account-views.js';
 
 const main=$('#main');
 const search=$('#search');
@@ -17,20 +19,30 @@ const [,route,slug]=path.split('/');
 const routeId=(()=>{try{return decodeURIComponent(slug||'');}catch{return slug;}})();
 const params=new URLSearchParams(location.search);
 const initialTag=params.get('the')||'';
+const tagCategory=categoryForTag(initialTag);
 const categoryParam=params.get('danhmuc');
-const category=categories.some(cat=>cat.id===categoryParam)?categoryParam:categoryForTag(initialTag);
+const category=categories.some(cat=>cat.id===categoryParam)?categoryParam:tagCategory;
+const minPrice=priceLimit(params.get('gia-tu'));
+const maxPrice=priceLimit(params.get('gia'));
 const filters={
   category,
-  tag:categoryForTag(initialTag)===category?initialTag:'',
+  tag:tagCategory&&tagCategory===category?initialTag:'',
   query:(params.get('q')||'').slice(0,100),
   condition:conditions.includes(params.get('tinhtrang'))?params.get('tinhtrang'):'',
-  budget:['50000','100000','200000'].includes(params.get('gia'))?params.get('gia'):'',
+  minPrice:minPrice&&maxPrice&&Number(minPrice)>Number(maxPrice)?'':minPrice,
+  maxPrice,
+  sale:params.get('giamgia')==='1',
   sort:['new','low','high'].includes(params.get('sapxep'))?params.get('sapxep'):'',
   saved:path==='/da-luu'
 };
 const onCatalog=path==='/kham-pha'||filters.saved;
 const product=route==='san-pham'&&routeId;
 const shop=route==='gian-hang'&&routeId;
+const onAuth=path==='/dang-nhap'||path==='/dang-ky';
+const onAccount=route==='tai-khoan';
+const onProfile=path==='/tai-khoan/ho-so';
+const onCart=path==='/gio-hang';
+const cartKey='reclass-cart';
 const savedKey='reclass-saved';
 const viewKey='reclass-recent-views';
 const pageSize=12;
@@ -39,15 +51,23 @@ const state={
   ready:false,visible:pageSize,tab:'description',photo:0
 };
 let saved=new Set(readList(savedKey));
-let toastTimer, searchTimer, tabHeight, tabLoad, panelFade, photoRequest;
-const workflow=createWorkflows({api,notify,getSession:()=>state.session,setProfile:profile=>{state.session.profile=profile;updateHeader();},refresh});
+let cart=new Set(readList(cartKey));
+const cartSelection=new Set(cart);
+let cartSending=false, accountData, accountRequest=0;
+let toastTimer, searchTimer, tabHeight, tabLoad, panelFade, photoRequest, refreshNumber=0, offerTimeout;
+const saving=new Set();
+const workflow=createWorkflows({api,notify,getSession:()=>state.session,setProfile:profile=>{
+  state.session.profile=profile;
+  updateHeader();
+  if (onCart) renderCart();
+},refresh,refreshAccount});
 
 async function api(endpoint, data) {
   const options=data===undefined?{}:data instanceof FormData?{method:'POST',body:data}:
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)};
   const response=await fetch(endpoint,options);
   const result=await response.json().catch(()=>null);
-  if (!response.ok||result===null) throw new Error(result?.error||'Không thể kết nối với RE:CLASS. Hãy thử lại.');
+  if (!response.ok||result===null) throw Object.assign(new Error(result?.error||'Không thể kết nối với RE:CLASS. Hãy thử lại.'),{status:response.status});
   return result;
 }
 function notify(message) {
@@ -58,18 +78,33 @@ function notify(message) {
   toastTimer=setTimeout(()=>{node.hidden=true;},4500);
 }
 function updateHeader() {
-  $('[data-action=account]').textContent=state.session?.signed?'Tài khoản':'Đăng nhập';
-  document.querySelectorAll('nav a').forEach(link=>{
+  const account=$('.account-trigger');
+  account.href=state.session?.signed?'/tai-khoan':'/dang-nhap';
+  if (onAuth||onAccount) account.setAttribute('aria-current','page');
+  $('[data-action=inbox]').hidden=!state.session?.signed;
+  $('.search-row').hidden=onAuth||(onAccount&&!state.session?.signed);
+  document.querySelectorAll('.site-header nav a').forEach(link=>{
     const current=path==='/'?'/':onCatalog?'/kham-pha':'';
     if (link.getAttribute('href')===current) link.setAttribute('aria-current','page');
     else link.removeAttribute('aria-current');
   });
+  const count=$('.cart-count');
+  count.textContent=cart.size;
+  count.hidden=!cart.size;
+  $('.header-cart').setAttribute('aria-label',cart.size?'Giỏ hàng, '+cart.size+' món':'Giỏ hàng');
+  if (onCart) $('.header-cart').setAttribute('aria-current','page');
+  const cartButton=$('[data-action=cart-add]');
+  if (cartButton) {
+    const added=cart.has(cartButton.dataset.id);
+    cartButton.dataset.inCart=added;
+    cartButton.querySelector('span').textContent=added?'Xem giỏ hàng':'Thêm vào giỏ';
+  }
 }
 function shopFixture(id) {
   const seller=sampleSellers.find(person=>person.id===id);
   if (!seller) return null;
   const reviews=sampleReviews.filter(review=>review.seller===id);
-  return {...seller,listings:sampleListings.filter(item=>item.sellerId===id),reviews,rating:reviews.length?5:null};
+  return {...seller,listings:sampleListings.filter(item=>item.sellerId===id),reviews,...reviewSummary(reviews)};
 }
 function updateTheme(next) {
   document.documentElement.dataset.theme=next;
@@ -78,21 +113,33 @@ function updateTheme(next) {
 }
 
 function availableIndex() {
-  return state.index.filter(({item})=>(!school.value||item.school===school.value)&&
-    (!onCatalog||((!filters.category||item.category===filters.category)&&(!filters.tag||item.tags?.includes(filters.tag))&&
-      (!filters.condition||item.condition===filters.condition)&&(!filters.budget||item.price<=Number(filters.budget))&&
-      (!filters.saved||saved.has(item.id)))));
+  const now=Date.now();
+  const min=Number(filters.minPrice);
+  const max=filters.maxPrice===''?Infinity:Number(filters.maxPrice);
+  return state.index.filter(({item})=>{
+    if(school.value&&item.school!==school.value) return false;
+    if(!onCatalog) return true;
+    const offer=activeOffer(item,now);
+    const price=offer?.price??item.price;
+    return (!filters.category||item.category===filters.category)&&(!filters.tag||item.tags?.includes(filters.tag))&&
+      (!filters.condition||item.condition===filters.condition)&&price>=min&&price<=max&&(!filters.sale||offer)&&
+      (!filters.saved||saved.has(item.id));
+  });
 }
 function catalogItems() {
   const items=rankListings(availableIndex(),filters.query);
   if (filters.sort==='new') items.sort((a,b)=>(b.created||'').localeCompare(a.created||''));
-  if (filters.sort==='low'||filters.sort==='high') items.sort((a,b)=>filters.sort==='low'?a.price-b.price:b.price-a.price);
+  const now=Date.now();
+  if (filters.sort==='low'||filters.sort==='high') {
+    const direction=filters.sort==='low'?1:-1;
+    items.sort((a,b)=>direction*(effectivePrice(a,now)-effectivePrice(b,now)));
+  }
   return items;
 }
 function syncCatalogUrl() {
   const url=new URL(browsePath(filters.category,filters.query,filters.tag),location.origin);
   if (filters.saved) url.pathname=path;
-  for (const [key,value] of Object.entries({truong:school.value,tinhtrang:filters.condition,gia:filters.budget,sapxep:filters.sort})) {
+  for (const [key,value] of Object.entries({truong:school.value,tinhtrang:filters.condition,'gia-tu':filters.minPrice,gia:filters.maxPrice,sapxep:filters.sort,giamgia:filters.sale?'1':''})) {
     if (value) url.searchParams.set(key,value);
   }
   history.replaceState(history.state,'',url);
@@ -108,13 +155,19 @@ function renderCatalog(animate=false) {
   list.innerHTML=listingCards(items.slice(0,state.visible),saved);
   if(animate) animateGrid(list.firstElementChild);
   const tagContainer=$('#catalog-tags');
-  if (tagContainer.dataset.category!==filters.category) {
+  if (tagContainer.dataset.category!==filters.category||tagContainer.dataset.tag!==filters.tag) {
     tagContainer.innerHTML=catalogTagFilters(filters.category,filters.tag);
     tagContainer.dataset.category=filters.category;
+    tagContainer.dataset.tag=filters.tag;
   }
   document.querySelectorAll('#catalog-pills [data-action=filter]').forEach(button=>button.setAttribute('aria-pressed',filters.category===button.dataset.id));
-  tagContainer.querySelectorAll('[data-action=tag-filter]').forEach(button=>button.setAttribute('aria-pressed',filters.tag===button.dataset.id));
-  $('[data-action=clear-filters]').hidden=!(filters.query||filters.category||filters.tag||filters.condition||filters.budget||filters.sort||school.value);
+  $('[data-action=sale-filter]').setAttribute('aria-pressed',filters.sale);
+  const priceLabel=priceFilterLabel(filters.minPrice,filters.maxPrice);
+  const priceSummary=$('#price-filter-summary');
+  priceSummary.querySelector('span').textContent=priceLabel;
+  priceSummary.title=priceLabel;
+  priceSummary.classList.toggle('active',Boolean(filters.minPrice||filters.maxPrice));
+  $('[data-action=clear-filters]').hidden=!(filters.query||filters.category||filters.tag||filters.condition||filters.minPrice||filters.maxPrice||filters.sort||filters.sale||school.value);
   const more=$('[data-action=load-more]');
   more.hidden=items.length<=state.visible;
   more.textContent='Xem thêm ('+Math.max(0,items.length-state.visible)+')';
@@ -164,14 +217,119 @@ function relatedTo(item) {
     item:other, relevance:(other.category===item.category?1:0)+(other.tags||[]).filter(value=>tags.has(value)).length*2
   })).sort((a,b)=>b.relevance-a.relevance).slice(0,4).map(result=>result.item);
 }
+const accountCounts=()=>({cart:cart.size,saved:saved.size});
+
+function renderAccount() {
+  const profile=state.session?.profile;
+  if (!state.ready) {main.innerHTML=pageLoading();return;}
+  if (!profile) {
+    document.title='Đăng nhập · RE:CLASS';
+    if (!$('.auth-layout')) main.innerHTML=authPage(false);
+    return;
+  }
+  const items=new Map([...state.items,...(accountData?.listings||[])].map(item=>[item.id,item]));
+  document.title='Tài khoản · RE:CLASS';
+  main.innerHTML=accountPage(path,profile,accountData,items,accountCounts(),params.get('trang-thai'));
+}
+
+async function refreshAccount(force=false) {
+  const profile=state.session?.profile;
+  if (!onAccount||!profile) return;
+  if (onProfile) {renderAccount();return;}
+  const request=++accountRequest;
+  const hasReputation=profile.verified&&(path==='/tai-khoan'||path==='/tai-khoan/danh-gia');
+  const dashboard=api('/api/dashboard');
+  const reputation=hasReputation?api('/api/sellers/'+encodeURIComponent(profile.id)):null;
+  let data;
+  try {
+    const [activity,ratings]=await Promise.all([dashboard,reputation]);
+    data={...activity,reputation:ratings};
+  } catch (error) {data={error:error.message};}
+  if (request!==accountRequest) return;
+  if (!force&&JSON.stringify(data)===JSON.stringify(accountData)) return;
+  accountData=data;
+  renderAccount();
+}
+
+function cartEntries() {
+  const items=new Map(state.items.filter(item=>item.sellerId!==state.session?.profile?.id).map(item=>[item.id,item]));
+  return [...cart].map(id=>({id,item:items.get(id)}));
+}
+
+function selectedCart(entries=cartEntries()) {
+  return entries.filter(({id,item})=>item&&cartSelection.has(id)).map(({item})=>item);
+}
+
+function syncCartSelection() {
+  const all=$('#cart-all');
+  if (!all) return;
+  const entries=cartEntries().filter(({item})=>item);
+  const selected=selectedCart(entries);
+  const eligible=new Set(entries.map(({id})=>id));
+  const requests=selected.filter(item=>!item.sample).length;
+  all.checked=eligible.size>0&&selected.length===eligible.size;
+  all.indeterminate=selected.length>0&&!all.checked;
+  all.disabled=cartSending||!eligible.size;
+  for (const checkbox of main.querySelectorAll('[name=cart-item]')) {
+    checkbox.disabled=cartSending||!eligible.has(checkbox.value);
+    checkbox.checked=eligible.has(checkbox.value)&&cartSelection.has(checkbox.value);
+  }
+  $('#cart-selection-label').textContent='Chọn tất cả ('+selected.length+' / '+eligible.size+')';
+  $('#cart-selected-count').textContent=selected.length;
+  $('#cart-subtotal').textContent=money(selected.reduce((total,item)=>total+effectivePrice(item),0));
+  const submit=$('[data-action=cart-submit]');
+  submit.disabled=cartSending||!requests;
+  submit.textContent=cartSending?'Đang gửi…':requests?'Gửi '+requests+' đề nghị mua':'Gửi đề nghị mua';
+  $('[data-action=cart-remove-selected]').disabled=cartSending||!selected.length;
+  main.querySelectorAll('[data-action=cart-save],[data-action=cart-remove],[data-action=contact]').forEach(button=>{button.disabled=cartSending;});
+}
+
+function renderCart() {
+  main.innerHTML=cartPage(cartEntries(),state.session?.profile,accountCounts(),cartSending);
+  document.title='Giỏ hàng · RE:CLASS';
+  syncCartSelection();
+}
+
+function updateCart(added=[],removed=[]) {
+  removed.forEach(id=>{cart.delete(id);cartSelection.delete(id);});
+  added.forEach(id=>{cart.add(id);cartSelection.add(id);});
+  storeList(cartKey,[...cart]);
+  updateHeader();
+  if (onCart) renderCart();
+}
+
+async function sendCart() {
+  const requests=selectedCart().filter(item=>!item.sample);
+  if (cartSending||!requests.length||!workflow.profileRequired(true)) return;
+  cartSending=true;
+  syncCartSelection();
+  try {
+    const results=await Promise.allSettled(requests.map(item=>api('/api/trades',{listingId:item.id})));
+    const sent=requests.filter((_,index)=>results[index].status==='fulfilled');
+    const errors=results.filter(result=>result.status==='rejected');
+    if (sent.length) updateCart([],sent.map(item=>item.id));
+    if (!errors.length) {location.assign('/tai-khoan/don-mua');return;}
+    notify((sent.length?'Đã gửi '+sent.length+' đề nghị. ':'')+
+      'Còn '+errors.length+' món chưa gửi: '+errors[0].reason.message);
+  } finally {
+    cartSending=false;
+    syncCartSelection();
+  }
+}
+
 function render() {
-  if (path==='/') {
+  if (onAuth) {
+    document.title=(path==='/dang-ky'?'Tạo tài khoản':'Đăng nhập')+' · RE:CLASS';
+    if (!$('.auth-layout')) main.innerHTML=authPage(path==='/dang-ky');
+  } else if (onAccount) renderAccount();
+  else if (onCart) renderCart();
+  else if (path==='/') {
     const byId=new Map(state.items.map(item=>[item.id,item]));
     const recent=readList(viewKey).map(id=>byId.get(id)).filter(Boolean).slice(0,4);
     main.innerHTML=home(state.items,saved,state.featured,recent);
   } else if (onCatalog) {
     main.innerHTML=catalog(filters);
-    for (const field of ['sort','condition','budget']) $('#'+field).value=filters[field];
+    for (const field of ['sort','condition']) $('#'+field).value=filters[field];
     renderCatalog();
   } else if (product) {
     const item=state.detail?.item||sampleListings.find(item=>item.id===product);
@@ -179,7 +337,7 @@ function render() {
     if (item&&seller) {
       const focusedTab=document.activeElement?.getAttribute('role')==='tab';
       document.title=item.title+' · RE:CLASS';
-      main.innerHTML=detail(item,seller,seller.reviews,relatedTo(item),saved,seller.listings.length,state.session?.profile);
+      main.innerHTML=detail(item,seller,seller.reviews,relatedTo(item),saved,seller.listings.length,state.session?.profile,cart.has(item.id));
       applyTab(state.tab,focusedTab);
       applyPhoto(item,Math.min(state.photo,item.images.length-1));
       storeList(viewKey,[item.id,...readList(viewKey).filter(id=>id!==item.id)].slice(0,12));
@@ -188,28 +346,51 @@ function render() {
     const seller=state.seller||shopFixture(shop);
     if (seller) {
       document.title=seller.shop+' · RE:CLASS';
-      main.innerHTML=storefront(seller,seller.listings,seller.reviews,saved);
+      main.innerHTML=storefront(seller,saved,seller.id===state.session?.profile?.id,params.get('xem'));
     } else main.innerHTML=state.ready?unavailable():pageLoading();
   } else main.innerHTML=unavailable();
 }
-async function refresh() {
-  const requests=[api('/api/session'),api('/api/listings')];
+async function refresh(marketOnly=false) {
+  const number=++refreshNumber;
+  const requests=[marketOnly?state.session:api('/api/session'),api('/api/listings')];
   if (product) requests.push(api('/api/listings/'+encodeURIComponent(product)));
   else if (shop) requests.push(api('/api/sellers/'+encodeURIComponent(shop)));
   const [session,items,page]=await Promise.allSettled(requests);
-  if (session.status==='fulfilled') state.session=session.value;
-  if (items.status==='fulfilled') {
+  let syncedSaved;
+  if (!marketOnly&&session.status==='fulfilled') {
+    if (session.value.signed) syncedSaved=await api('/api/saved').catch(()=>undefined);
+    else syncedSaved=readList(savedKey);
+  }
+  if (number!==refreshNumber) return;
+  if (!marketOnly&&session.status==='fulfilled') state.session=session.value;
+  if (syncedSaved) saved=new Set(syncedSaved);
+  let changed=!state.ready||!marketOnly;
+  if (items.status==='fulfilled'&&JSON.stringify(items.value)!==JSON.stringify(state.items)) {
     state.items=items.value;
     state.index=indexListings(state.items);
     populateSchools(school.value);
+    changed=true;
   }
   if (page) {
-    if (product) state.detail=page.status==='fulfilled'?page.value:null;
-    else state.seller=page.status==='fulfilled'?page.value:null;
+    const key=product?'detail':'seller';
+    if (page.status==='fulfilled'||page.reason?.status===404) {
+      const next=page.status==='fulfilled'?page.value:null;
+      if (JSON.stringify(next)!==JSON.stringify(state[key])) {state[key]=next;changed=true;}
+    }
   }
   state.ready=true;
+  scheduleOffers();
   updateHeader();
-  if (onCatalog&&$('#catalog-list')) renderCatalog(); else render();
+  if (!changed) return;
+  if (onAuth&&state.session?.signed) {
+    location.replace(params.get('tiep')==='/gio-hang'?'/gio-hang':'/tai-khoan');
+    return;
+  }
+  if (onAccount&&marketOnly) {
+    if (!onProfile) await refreshAccount();
+  } else if (onCatalog&&$('#catalog-list')) renderCatalog();
+  else render();
+  if (onAccount&&!onProfile&&!marketOnly) await refreshAccount();
   autocomplete.update(suggestionPool(availableIndex()));
 }
 
@@ -269,10 +450,16 @@ function renderFeatured() {
   list.innerHTML=listingCards(state.items.filter(item=>!state.featured||item.category===state.featured).slice(0,4),saved);
   animateGrid(list.firstElementChild);
 }
-function save(id) {
-  if (saved.has(id)) saved.delete(id);
-  else saved.add(id);
-  storeList(savedKey,[...saved]);
+async function save(id,keep=!saved.has(id)) {
+  if (saving.has(id)) return false;
+  if (keep===saved.has(id)) return true;
+  if (state.session?.signed) {
+    saving.add(id);
+    try {await api('/api/saved/'+encodeURIComponent(id),{saved:keep});}
+    finally {saving.delete(id);}
+  }
+  if (keep) saved.add(id); else saved.delete(id);
+  if (!state.session?.signed) storeList(savedKey,[...saved]);
   document.querySelectorAll('[data-action=save]').forEach(button=>{
     if (button.dataset.id!==id) return;
     button.setAttribute('aria-pressed',saved.has(id));
@@ -284,6 +471,7 @@ function save(id) {
     autocomplete.update(suggestionPool(availableIndex()));
   }
   notify(saved.has(id)?'Đã lưu tin.':'Đã bỏ lưu tin.');
+  return true;
 }
 async function share() {
   try {
@@ -291,12 +479,63 @@ async function share() {
     else { await navigator.clipboard.writeText(location.href);notify('Đã sao chép đường dẫn.'); }
   }catch(error){if(error.name!=='AbortError') workflow.showLink(location.href);}
 }
+function scheduleOffers() {
+  clearTimeout(offerTimeout);
+  if (!(onCatalog||product||shop||path==='/'||onCart)) return;
+  const now=Date.now();
+  const next=state.items.reduce((soonest,item)=>Math.min(soonest,activeOffer(item,now)?.endsAt??Infinity),Infinity);
+  if (!Number.isFinite(next)) return;
+  offerTimeout=setTimeout(()=>{
+    if (onCatalog) {
+      renderCatalog();
+      autocomplete.update(suggestionPool(availableIndex()));
+    } else render();
+    scheduleOffers();
+  },Math.min(next-now,2_147_483_647));
+}
+
+function updateCountdown() {
+  const timer=$('[data-sale-ends]');
+  if(timer) timer.textContent=countdown(Number(timer.dataset.saleEnds));
+}
+
+function applyPrice(min,max) {
+  const form=$('#price-filter-form');
+  filters.minPrice=min;
+  filters.maxPrice=max;
+  form.elements.min.value=min;
+  form.elements.max.value=max;
+  form.querySelector('.form-error').hidden=true;
+  form.closest('details').open=false;
+  filterChanged();
+  $('#price-filter-summary').focus({preventScroll:true});
+}
+document.addEventListener('submit',event=>{
+  const form=event.target;
+  if (form.id!=='price-filter-form') return;
+  event.preventDefault();
+  const min=priceLimit(form.elements.min.value);
+  const max=priceLimit(form.elements.max.value);
+  const err=form.querySelector('.form-error');
+  if ([form.elements.min,form.elements.max].some(field=>field.validity.badInput||(field.value!==''&&!priceLimit(field.value)))) {
+    err.textContent='Nhập số nguyên từ 0 đến 20.000.000đ.';
+  } else if (min&&max&&Number(min)>Number(max)) {
+    err.textContent='Giá tối đa cần bằng hoặc lớn hơn giá tối thiểu.';
+  } else return applyPrice(min,max);
+  err.hidden=false;
+});
+
 function clearFilters() {
   clearTimeout(searchTimer);
-  for (const key of ['category','tag','query','condition','budget','sort']) filters[key]='';
+  for (const key of ['category','tag','query','condition','minPrice','maxPrice','sort']) filters[key]='';
+  filters.sale=false;
   search.value='';
   school.value='';
-  for (const field of ['sort','condition','budget']) $('#'+field).value='';
+  for (const field of ['sort','condition']) $('#'+field).value='';
+  const priceForm=$('#price-filter-form');
+  priceForm.elements.min.value='';
+  priceForm.elements.max.value='';
+  priceForm.querySelector('.form-error').hidden=true;
   filterChanged();
   $('#catalog-pills button').focus();
 }
@@ -306,12 +545,22 @@ school.addEventListener('change',()=>{
   else autocomplete.update(suggestionPool(availableIndex()));
 });
 document.addEventListener('change',event=>{
-  const {id,value}=event.target;
-  if (!onCatalog||!['sort','condition','budget'].includes(id)) return;
+  const {id,value,name,checked}=event.target;
+  if (onCart&&(id==='cart-all'||name==='cart-item')) {
+    const changed=id==='cart-all'?cartEntries().filter(({item})=>item).map(({id})=>id):[value];
+    changed.forEach(id=>{if (checked) cartSelection.add(id); else cartSelection.delete(id);});
+    syncCartSelection();
+    return;
+  }
+  if (!onCatalog||!['sort','condition'].includes(id)) return;
   filters[id]=value;
   filterChanged();
 });
 document.addEventListener('keydown',event=>{
+  if (event.key==='Escape') {
+    const disclosure=event.target.closest?.('.tag-more[open],.price-filter[open]');
+    if (disclosure) {event.preventDefault();disclosure.open=false;disclosure.querySelector('summary').focus();return;}
+  }
   if (event.target.getAttribute?.('role')!=='tab'||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
   const tabs=[...document.querySelectorAll('[role=tab]')];
   const i=tabs.indexOf(event.target);
@@ -320,6 +569,8 @@ document.addEventListener('keydown',event=>{
   switchTab(tabs[next].dataset.id,true);
 });
 document.addEventListener('click',async event=>{
+  if (!event.target.closest('.tag-more')) document.querySelectorAll('.tag-more[open]').forEach(tags=>{tags.open=false;});
+  if (!event.target.closest('.price-filter')&&$('.price-filter[open]')) $('.price-filter').open=false;
   const link=event.target.closest('a[href]');
   if (link&&!event.defaultPrevented&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.shiftKey&&!link.target&&!link.hasAttribute('download')) {
     const next=new URL(link.href);
@@ -342,8 +593,15 @@ document.addEventListener('click',async event=>{
       if(filters.tag===id) filters.tag='';
       else {filters.tag=id;filters.category=categoryForTag(id);}
       filterChanged();
-      if (!button.isConnected) $('#catalog-tags [data-id="'+id+'"]')?.focus();
-    } else if (action==='clear-filters') clearFilters();
+      if (!button.isConnected) {
+        const selected=filters.tag&&$('#catalog-tags [aria-pressed=true]');
+        (selected||$('#catalog-tags summary'))?.focus({preventScroll:true});
+      }
+    } else if (action==='sale-filter') {
+      filters.sale=!filters.sale;
+      filterChanged();
+    } else if (action==='clear-price') applyPrice('','');
+    else if (action==='clear-filters') clearFilters();
     else if (action==='load-more') {
       const firstNew=state.visible;
       state.visible+=pageSize;
@@ -360,7 +618,17 @@ document.addEventListener('click',async event=>{
       const track=$('.category-track');
       const gap=Number.parseFloat(getComputedStyle(track).columnGap)||0;
       track.scrollBy({left:Number(id)*(track.firstElementChild.getBoundingClientRect().width+gap)});
-    } else if (action==='save') save(id);
+    } else if (action==='cart-add') {
+      if (cart.has(id)) {location.assign('/gio-hang');return;}
+      updateCart([id]);
+      notify('Đã thêm món đồ vào giỏ hàng.');
+    } else if (action==='cart-remove') updateCart([],[id]);
+    else if (action==='cart-remove-selected') updateCart([],selectedCart().map(item=>item.id));
+    else if (action==='cart-save') {
+      if (await save(id,true)) {updateCart([],[id]);notify('Đã chuyển món đồ sang tin đã lưu.');}
+    } else if (action==='cart-submit') await sendCart();
+    else if (action==='reload-account') await refreshAccount(true);
+    else if (action==='save') await save(id);
     else if (action==='share') await share();
     else if (action==='tab') switchTab(id);
     else if (action==='photo') await choosePhoto(Number(id));
@@ -369,15 +637,26 @@ document.addEventListener('click',async event=>{
     } else await workflow.handle(action,id,button);
   }catch(error){notify(error.message);}
 });
+window.addEventListener('storage',event=>{
+  if (event.key!==cartKey&&event.key!==null) return;
+  const next=new Set(readList(cartKey));
+  for (const id of next) if (!cart.has(id)) cartSelection.add(id);
+  for (const id of cartSelection) if (!next.has(id)) cartSelection.delete(id);
+  cart=next;
+  updateHeader();
+  if (onCart) renderCart();
+});
 window.addEventListener('pageshow',event=>{
   document.documentElement.classList.remove('is-navigating');
   if (event.persisted) {
-    saved=new Set(readList(savedKey));
-    render();
+    refresh();
   }
 });
 
 $('.search-icon').innerHTML=icon('search');
+$('.cart-icon').innerHTML=icon('cart');
+$('.account-icon').innerHTML=icon('account');
+$('.inbox-icon').innerHTML=icon('inbox');
 for (const button of document.querySelectorAll('[data-theme-choice]')) button.innerHTML=icon(button.dataset.themeChoice==='dark'?'moon':'sun');
 updateTheme(document.documentElement.dataset.theme);
 $('#footer').innerHTML=footer();
@@ -386,7 +665,22 @@ populateSchools(params.get('truong'));
 autocomplete.update(suggestionPool(availableIndex()));
 updateHeader();
 render();
+scheduleOffers();
+if (product) setInterval(updateCountdown,1000);
 refresh().then(()=>{
   const anchor=location.hash.slice(1);
   if(anchor) document.getElementById(anchor)?.scrollIntoView({behavior:'instant'});
+  const updates=new EventSource('/api/listings/events');
+  if (onAccount&&!onProfile&&state.session?.signed) {
+    const inboxUpdates=new EventSource('/api/inbox/events');
+    inboxUpdates.addEventListener('change',()=>refreshAccount());
+  }
+  let pending=false, changed=false;
+  updates.addEventListener('change',async()=>{
+    changed=true;
+    if (pending) return;
+    pending=true;
+    try {while (changed) {changed=false;await refresh(true);}}
+    finally {pending=false;}
+  });
 });

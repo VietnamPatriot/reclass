@@ -1,199 +1,179 @@
-import { categories, conditions, schools, sampleListings, sampleSellers, sampleReviews } from '../public/data.js';
-import { inferredTags, tagsFor } from '../public/tags.js';
+import { Readable } from 'node:stream';
+import { categories, conditions, sampleListings, sampleSellers, sampleReviews, reviewSummary } from '../public/catalog/data.js';
+import { inferredTags, tagsFor } from '../public/catalog/tags.js';
+import { getProfile, publicProfile, rateLimit, requireModerator, requireProfile } from './accounts.js';
+import { cleanPhoto, deletePhoto, docData, formBody, get, jsonBody, need, now, putPhoto, records, textField, uid } from './firebase.js';
 
-export class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
-export const need = (condition,status,message) => { if (!condition) throw new HttpError(status,message); };
-export const identity = request => request.headers.get('oai-authenticated-user-id') || '';
-export const sql = (db, query, ...values) => db.prepare(query).bind(...values);
-export const first = (db, query, ...values) => sql(db,query,...values).first();
-export const rows = async (db,query,...values) => (await sql(db,query,...values).all()).results;
-export const run = (db,query,...values) => sql(db,query,...values).run();
-export const uid = () => crypto.randomUUID();
-export const getProfile = (db,id) => id ? first(db,'SELECT * FROM profiles WHERE id=?',id) : null;
-export function requireUser(id) { need(id,401,'Hãy đăng nhập để tiếp tục.'); }
-export function requireProfile(profile,verified=false) {
-  need(profile,403,'Hãy tạo hồ sơ học sinh trước khi tiếp tục.');
-  if (verified) need(profile.verified,403,'Bạn cần xác minh tư cách học sinh để tiếp tục.');
-}
-export const requireModerator = profile => need(profile?.moderator,403,'Chức năng dành cho người kiểm duyệt.');
-export function textField(value, label, min, max) {
-  const text = typeof value === 'string' ? value.trim() : '';
-  need(text.length>=min&&text.length<=max,400,label+' cần từ '+min+' đến '+max+' ký tự.');
-  return text;
-}
-export const jsonBody = async request => {
-  let data;
-  try { data=await request.json(); } catch { throw new HttpError(400,'Dữ liệu gửi lên không hợp lệ.'); }
-  need(data && typeof data === 'object' && !Array.isArray(data),400,'Dữ liệu gửi lên không hợp lệ.');
-  return data;
-};
-export async function digest(value) {
-  const hash = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(hash), byte=>byte.toString(16).padStart(2,'0')).join('');
-}
-const photoUrl = (id,key) => '/photos/'+id+'/'+key;
-export const listingFields = 'l.*, p.name AS seller, p.school, p.verified';
-const listingQuery = 'SELECT '+listingFields+' FROM listings l JOIN profiles p ON p.id=l.seller_id';
-export const dbListing = (db,id) => first(db,listingQuery+' WHERE l.id=?',id);
-function listingTags(row) {
-  const tags=JSON.parse(row.tags||'[]');
-  return tags.length ? tags : inferredTags(row.category,row.title,row.description);
-}
-export const publicListing = row => ({
-  id:row.id,sellerId:row.seller_id,seller:row.seller,school:row.school,verified:!!row.verified,
-  title:row.title,category:row.category,condition:row.condition,price:row.price,negotiable:!!row.negotiable,
-  description:row.description,delivery:row.delivery,images:JSON.parse(row.images).map(key=>photoUrl(row.id,key)),
-  status:row.status,created:row.created,tags:listingTags(row)
-});
-const publicProfile = row => ({id:row.id,name:row.name,school:row.school,shop:row.shop,bio:row.bio,verified:!!row.verified});
-export const ownProfile = row => row ? {...publicProfile(row),moderator:!!row.moderator} : null;
+export const listingRef = (db, id) => db.collection('listings').doc(id);
+export const activeListings = db => db.collection('listings').where('status', '==', 'active');
+export const newest = (a, b) => b.created.localeCompare(a.created) || a.id.localeCompare(b.id);
+const photoPath = (id, key) => `listings/${id}/${key}`;
+const canRead = (listing, profile) => ['active', 'sold'].includes(listing.status) || listing.seller_id === profile?.id || profile?.moderator;
+const visibleReviews = (db, id) => db.collection('reviews').where('seller_id', '==', id).where('hidden', '==', false);
 
-export const catalog = async db => {
-  const active = await rows(db,listingQuery+" WHERE l.status='active' ORDER BY l.created DESC,l.id");
-  return [...active.map(publicListing),...sampleListings];
-};
-export async function getListing(db,id,profile) {
-  const sample = sampleListings.find(item=>item.id===id);
+function publicListing(row, seller, ratings = { rating: null, ratingCount: 0 }) {
+  return {
+    id: row.id, sellerId: row.seller_id, seller: seller.name, school: seller.school, verified: !!seller.verified,
+    title: row.title, category: row.category, condition: row.condition, price: row.price, negotiable: !!row.negotiable,
+    description: row.description, delivery: row.delivery, images: row.images.map(key => `/photos/${row.id}/${key}`),
+    status: row.status, created: row.created, tags: row.tags?.length ? row.tags : inferredTags(row.category, row.title, row.description),
+    ...ratings
+  };
+}
+
+async function listingCards(db, listings, showRatings = false) {
+  const ids = [...new Set(listings.map(row => row.seller_id))];
+  if (!ids.length) return [];
+  const refs = ids.map(id => db.collection('profiles').doc(id));
+  const sellers = new Map((await db.getAll(...refs)).filter(snap => snap.exists).map(snap => [snap.id, snap.data()]));
+  const ratings = showRatings ? new Map(await Promise.all([...sellers.keys()].map(async id => {
+    const reviews = await visibleReviews(db, id).select('rating').get();
+    return [id, reviewSummary(records(reviews))];
+  }))) : new Map();
+  return listings.filter(row => sellers.has(row.seller_id))
+    .map(row => publicListing(row, sellers.get(row.seller_id), ratings.get(row.seller_id)));
+}
+
+export async function catalog(db) {
+  return [...await listingCards(db, records(await activeListings(db).get()).sort(newest), true), ...sampleListings];
+}
+
+export async function getListing(db, id, profile) {
+  const sample = sampleListings.find(item => item.id === id);
   if (sample) return sample;
-  const row = await dbListing(db,id);
-  if (!row) return null;
-  return ['active','sold'].includes(row.status)||row.seller_id===profile?.id||profile?.moderator ? publicListing(row) : null;
-}
-export async function sellerDetails(db,id) {
-  const sample = sampleSellers.find(person=>person.id===id);
-  if (sample) return {...sample,
-    listings:sampleListings.filter(item=>item.sellerId===id),
-    reviews:sampleReviews.filter(review=>review.seller===id),rating:5};
-  const profile = await getProfile(db,id);
-  if (!profile?.verified) return null;
-  const listings = await rows(db,listingQuery+" WHERE l.seller_id=? AND l.status='active' ORDER BY l.created DESC",id);
-  const reviews = await rows(db,'SELECT r.id,r.rating,r.text,p.name AS author FROM reviews r JOIN profiles p ON p.id=r.author_id WHERE r.seller_id=? AND r.hidden=0 ORDER BY r.created DESC,r.id',id);
-  const completed = await first(db,"SELECT count(*) AS total FROM trades WHERE seller_id=? AND status='completed'",id);
-  return {...publicProfile(profile),listings:listings.map(publicListing),reviews,completed:completed.total,
-    rating:reviews.length?reviews.reduce((sum,review)=>sum+review.rating,0)/reviews.length:null};
+  const listing = await get(listingRef(db, id));
+  if (!listing || !canRead(listing, profile)) return null;
+  const seller = await getProfile(db, listing.seller_id);
+  return seller && publicListing(listing, seller);
 }
 
-export async function editProfile(db,id,profile,request) {
-  const body = await jsonBody(request);
-  const name = textField(body.name,'Tên hiển thị',2,45);
-  const shop = textField(body.shop,'Tên gian hàng',2,65);
-  const bio = textField(body.bio,'Giới thiệu',0,350);
-  const school = profile?.verified ? profile.school : body.school;
-  need(schools.includes(school),400,'Hãy chọn trường THPT tham gia thử nghiệm.');
-  await run(db,'INSERT INTO profiles (id,name,shop,school,bio) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,shop=excluded.shop,bio=excluded.bio,school=CASE WHEN profiles.verified=1 THEN profiles.school ELSE excluded.school END',id,name,shop,school,bio);
-  return ownProfile(await getProfile(db,id));
-}
-export async function verifyStudent(db,profile,request) {
-  requireProfile(profile);
-  need(!profile.verified,409,'Hồ sơ đã được xác minh.');
-  const body = await jsonBody(request);
-  const hash = await digest(textField(body.code,'Mã xác minh',8,50).toUpperCase());
-  const results = await db.batch([
-    sql(db,"UPDATE invites SET used_by=? WHERE hash=? AND school=? AND used_by IS NULL AND expires>datetime('now') AND EXISTS (SELECT 1 FROM profiles WHERE id=? AND school=? AND verified=0)",profile.id,hash,profile.school,profile.id,profile.school),
-    sql(db,'UPDATE profiles SET verified=1 WHERE id=? AND school=? AND EXISTS (SELECT 1 FROM invites WHERE hash=? AND used_by=?)',profile.id,profile.school,hash,profile.id)
+export async function sellerDetails(db, id) {
+  const sample = sampleSellers.find(person => person.id === id);
+  if (sample) {
+    const reviews = sampleReviews.filter(review => review.seller === id);
+    return { ...sample, listings: sampleListings.filter(item => item.sellerId === id), soldListings: [], reviews, ...reviewSummary(reviews) };
+  }
+  const profile = await getProfile(db, id);
+  if (!profile?.verified) return null;
+  const owned = db.collection('listings').where('seller_id', '==', id);
+  const [listings, sold, reviewDocs, completed] = await Promise.all([
+    owned.where('status', '==', 'active').get(),
+    owned.where('status', '==', 'sold').get(),
+    visibleReviews(db, id).get(),
+    db.collection('trades').where('seller_id', '==', id).where('status', '==', 'completed').count().get()
   ]);
-  need(results[0].meta.changes===1,400,'Mã không hợp lệ, đã dùng, đã hết hạn hoặc khác trường.');
-  return ownProfile(await getProfile(db,profile.id));
+  const reviewRows = records(reviewDocs).sort(newest);
+  const authors = [...new Set(reviewRows.map(row => row.author_id))];
+  const names = new Map(await Promise.all(authors.map(async uid => [uid, (await getProfile(db, uid))?.name ?? 'Học sinh'])));
+  const reviews = reviewRows.map(row => ({ id: row.id, rating: row.rating, text: row.text, author: names.get(row.author_id) }));
+  const ratings = reviewSummary(reviews);
+  return { ...publicProfile(profile), listings: records(listings).sort(newest).map(row => publicListing(row, profile, ratings)),
+    soldListings: records(sold).sort(newest).map(row => publicListing(row, profile, ratings)), reviews,
+    completed: completed.data().count, ...ratings };
 }
-export async function generateInvite(db,profile,request) {
-  requireModerator(profile);
-  const body = await jsonBody(request);
-  need(schools.includes(body.school),400,'Hãy chọn một trường.');
-  const code = 'RC-'+uid().replaceAll('-','').slice(0,24).toUpperCase();
-  await run(db,"INSERT INTO invites (hash,school,expires) VALUES (?,?,datetime('now','+7 days'))",await digest(code),body.school);
-  return {code,school:body.school};
+
+export async function dashboardListings(db, profile) {
+  const snapshot = await db.collection('listings').where('seller_id', '==', profile.id).get();
+  return records(snapshot).sort(newest).map(row => ({ ...publicListing(row, profile), reason: row.reason }));
 }
-export async function claimModerator(env,profile,request) {
-  requireProfile(profile);
-  need(env.MODERATOR_CODE,503,'Chưa cấu hình quyền kiểm duyệt.');
-  const body = await jsonBody(request);
-  const supplied = await digest(textField(body.code,'Mã quản trị',8,100));
-  const expected = await digest(env.MODERATOR_CODE);
-  let difference = 0;
-  for (let index=0;index<expected.length;index++) difference |= supplied.charCodeAt(index)^expected.charCodeAt(index);
-  need(!difference,403,'Mã quản trị không đúng.');
-  await run(env.DB,'UPDATE profiles SET moderator=1 WHERE id=?',profile.id);
-  return ownProfile(await getProfile(env.DB,profile.id));
+
+export async function moderationData(db) {
+  const [listings, reports] = await Promise.all([
+    db.collection('listings').where('status', '==', 'pending').get(), db.collection('reports').where('status', '==', 'open').get()
+  ]);
+  return { listings: await listingCards(db, records(listings).sort(newest).reverse()),
+    reports: records(reports).sort(newest).reverse().map(({ id, kind, target, body, created }) => ({ id, kind, target, body, created })) };
 }
-export async function getPhoto(env,profile,id,key){
-  const listing = await dbListing(env.DB,id);
-  need(listing&&(['active','sold'].includes(listing.status)||listing.seller_id===profile?.id||profile?.moderator),404,'Không tìm thấy ảnh.');
-  need(JSON.parse(listing.images).includes(key),404,'Không tìm thấy ảnh.');
-  const object = await env.BUCKET.get(id+'/'+key);
-  need(object,404,'Không tìm thấy ảnh.');
-  return new Response(object.body,{headers:{'Content-Type':'image/jpeg','Cache-Control':'private, no-cache'}});
+
+export async function getPhoto(env, profile, id, key) {
+  const listing = await get(listingRef(env.db, id));
+  need(listing && canRead(listing, profile) && listing.images.includes(key), 404, 'Không tìm thấy ảnh.');
+  const object = env.bucket.file(photoPath(id, key));
+  need((await object.exists())[0], 404, 'Không tìm thấy ảnh.');
+  return new Response(Readable.toWeb(object.createReadStream()), { headers: { 'Content-Type': 'image/jpeg' } });
 }
-export async function saveListing(env,profile,request,id) {
-  requireProfile(profile,true);
-  const db=env.DB;
-  const previous = id ? await dbListing(db,id) : null;
+
+export async function saveListing(env, profile, request, id) {
+  requireProfile(profile, true);
+  const { db, bucket } = env;
+  const ref = listingRef(db, id || uid());
+  const previous = id ? await get(ref) : null;
   if (id) {
-    need(previous?.seller_id===profile.id,404,'Không tìm thấy tin đăng.');
-    need(previous.status!=='sold',409,'Tin đã giao dịch thành công.');
+    need(previous?.seller_id === profile.id, 404, 'Không tìm thấy tin đăng.');
+    need(previous.status !== 'sold', 409, 'Tin đã giao dịch thành công.');
   }
-  const form=await request.formData();
-  const title=textField(form.get('title'),'Tiêu đề',4,100);
-  const category=form.get('category');
-  need(categories.some(cat=>cat.id===category),400,'Danh mục không được hỗ trợ.');
-  const condition=form.get('condition');
-  need(conditions.includes(condition),400,'Hãy chọn tình trạng thực tế.');
-  const price=Number(form.get('price'));
-  need(form.get('price')!==''&&form.get('price')!==null&&Number.isSafeInteger(price)&&price>=0&&price<=20000000,400,'Giá phải từ 0 đến 20.000.000đ.');
-  const description=textField(form.get('description'),'Mô tả',15,1500);
-  const delivery=textField(form.get('delivery'),'Giao nhận',8,350);
-  const selectedTags=[...new Set(form.getAll('tags'))];
-  const validTags=new Set(tagsFor(category).map(item=>item.id));
-  need(selectedTags.length<=3&&selectedTags.every(id=>validTags.has(id)),400,'Chọn tối đa 3 thẻ trong đúng danh mục.');
-  const tags=JSON.stringify(selectedTags.length?selectedTags:inferredTags(category,title,description));
-  const negotiable=Number(form.get('negotiable')==='on');
-  const photos=form.getAll('photos').filter(file=>typeof file==='object'&&file.size);
-  need((previous||photos.length)&&photos.length<=3,400,'Hãy thêm từ 1 đến 3 ảnh thật.');
-  const validatedPhotos = [];
-  for (const photo of photos) {
-    need(photo.type==='image/jpeg'&&photo.size<=1500000,400,'Ảnh cần là JPEG và dưới 1,5 MB.');
-    const bytes=new Uint8Array(await photo.arrayBuffer());
-    need(bytes[0]===255&&bytes[1]===216&&bytes[2]===255&&bytes.at(-2)===255&&bytes.at(-1)===217,400,'Tệp ảnh không hợp lệ.');
-    validatedPhotos.push(bytes);
-  }
-  const listingId=id||uid();
-  const oldKeys=previous?JSON.parse(previous.images):[];
-  const newKeys=[];
-  const updated=uid();
+  const form = await formBody(request);
+  const title = textField(form.get('title'), 'Tiêu đề', 4, 100);
+  const category = form.get('category');
+  need(categories.some(cat => cat.id === category), 400, 'Danh mục không được hỗ trợ.');
+  const condition = form.get('condition');
+  need(conditions.includes(condition), 400, 'Hãy chọn tình trạng thực tế.');
+  const price = Number(form.get('price'));
+  need(typeof form.get('price') === 'string' && form.get('price').trim() && Number.isSafeInteger(price) && price >= 0 && price <= 20_000_000, 400, 'Giá phải từ 0 đến 20.000.000đ.');
+  const description = textField(form.get('description'), 'Mô tả', 15, 1500);
+  const delivery = textField(form.get('delivery'), 'Giao nhận', 8, 350);
+  const selectedTags = [...new Set(form.getAll('tags'))];
+  const validTags = new Set(tagsFor(category).map(item => item.id));
+  need(selectedTags.length <= 3 && selectedTags.every(tag => validTags.has(tag)), 400, 'Chọn tối đa 3 thẻ trong đúng danh mục.');
+  const tags = selectedTags.length ? selectedTags : inferredTags(category, title, description);
+  const photos = form.getAll('photos').filter(file => !(file instanceof File && !file.size && !file.name));
+  need((previous || photos.length) && photos.length <= 3, 400, 'Hãy thêm từ 1 đến 3 ảnh thật.');
+  await rateLimit(db, 'listing', profile.id, 20, 3600);
+  const clean = [];
+  for (const file of photos) clean.push(await cleanPhoto(file, 1_500_000));
+  const keys = clean.map(() => uid() + '.jpg');
+  const updates = { title, category, condition, price, negotiable: form.get('negotiable') === 'on', description, delivery, tags,
+    images: keys.length ? keys : previous.images, status: 'pending', reason: '', updated: uid() };
   try {
-    for (const bytes of validatedPhotos) {
-      const key=uid()+'.jpg';
-      await env.BUCKET.put(listingId+'/'+key,bytes,{httpMetadata:{contentType:'image/jpeg'}});
-      newKeys.push(key);
-    }
-    const images=JSON.stringify(newKeys.length?newKeys:oldKeys);
+    for (const [index, bytes] of clean.entries()) await putPhoto(bucket, photoPath(ref.id, keys[index]), bytes);
     if (previous) {
-      const saved=await run(db,"UPDATE listings SET title=?,category=?,condition=?,price=?,negotiable=?,description=?,delivery=?,images=?,tags=?,status='pending',reason='',updated=? WHERE id=? AND updated=? AND status<>'sold'",title,category,condition,price,negotiable,description,delivery,images,tags,updated,id,previous.updated);
-      need(saved.meta.changes===1,409,'Tin đăng đã thay đổi. Hãy tải lại và thử lại.');
+      await db.runTransaction(async tx => {
+        const listing = (await tx.get(ref)).data();
+        need(listing?.updated === previous.updated && listing.status !== 'sold', 409, 'Tin đăng đã thay đổi. Hãy tải lại và thử lại.');
+        tx.update(ref, updates);
+      });
     } else {
-      await run(db,'INSERT INTO listings (id,seller_id,title,category,condition,price,negotiable,description,delivery,images,tags,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',listingId,profile.id,title,category,condition,price,negotiable,description,delivery,images,tags,updated);
+      await ref.create({ ...updates, seller_id: profile.id, created: now(), openTrades: [] });
     }
   } catch (error) {
-    await Promise.allSettled(newKeys.map(key=>env.BUCKET.delete(listingId+'/'+key)));
-    throw error;
+    const current = (await ref.get()).data();
+    if (current?.updated !== updates.updated && !keys.some(key => current?.images.includes(key))) {
+      await Promise.allSettled(keys.map(key => deletePhoto(bucket, photoPath(ref.id, key))));
+      throw error;
+    }
   }
-  if (newKeys.length) await Promise.allSettled(oldKeys.map(key=>env.BUCKET.delete(listingId+'/'+key)));
-  return {id:listingId};
+  if (keys.length && previous) await Promise.allSettled(previous.images.map(key => deletePhoto(bucket, photoPath(ref.id, key))));
+  return { id: ref.id };
 }
-export async function listingAction(db,profile,id,request,moderating=false) {
+
+export async function listingAction(db, profile, id, request, moderating = false) {
   requireProfile(profile, !moderating);
   if (moderating) requireModerator(profile);
-  const listing=await dbListing(db,id);
-  need(listing&&(moderating||listing.seller_id===profile.id),404,'Không tìm thấy tin đăng.');
-  const body=await jsonBody(request);
-  const actions = moderating ? {approve:['active',['pending']],reject:['rejected',['pending']],remove:['rejected',['active']]} :
-    {hide:['hidden',['active','pending']],submit:['pending',['hidden']]};
-  const change=Object.hasOwn(actions,body.action)?actions[body.action]:null;
-  need(change?.[1].includes(listing.status),409,'Không thể chuyển tin đăng sang trạng thái này.');
-  const [status]=change;
-  const reason=status==='rejected'?textField(body.reason,'Lý do kiểm duyệt',5,400):'';
-  const result=await run(db,'UPDATE listings SET status=?,reason=?,updated=? WHERE id=? AND updated=?',status,reason,uid(),id,listing.updated);
-  need(result.meta.changes===1,409,'Tin đăng đã thay đổi. Hãy tải lại và thử lại.');
-  return {status};
+  const body = await jsonBody(request);
+  const actions = moderating ? { approve: ['active', ['pending']], reject: ['rejected', ['pending']], remove: ['rejected', ['active']] } :
+    { hide: ['hidden', ['active', 'pending']], submit: ['pending', ['hidden']] };
+  const change = Object.hasOwn(actions, body.action) ? actions[body.action] : null;
+  const ref = listingRef(db, id);
+  return db.runTransaction(async tx => {
+    const listing = docData(await tx.get(ref));
+    need(listing && (moderating || listing.seller_id === profile.id), 404, 'Không tìm thấy tin đăng.');
+    need(change?.[1].includes(listing.status), 409, 'Không thể chuyển tin đăng sang trạng thái này.');
+    const [status] = change;
+    const reason = status === 'rejected' ? textField(body.reason, 'Lý do kiểm duyệt', 5, 400) : '';
+    tx.update(ref, { status, reason, updated: uid() });
+    return { status };
+  });
+}
+
+const savedListings = (db, id) => db.collection('profiles').doc(id).collection('saved');
+export async function getSaved(db, profile) { return (await savedListings(db, profile.id).get()).docs.map(doc => doc.id); }
+export async function changeSaved(db, profile, id, request) {
+  const body = await jsonBody(request);
+  need(typeof body.saved === 'boolean', 400, 'Thao tác lưu tin không hợp lệ.');
+  const ref = savedListings(db, profile.id).doc(id);
+  if (body.saved) {
+    need(await getListing(db, id, null), 404, 'Không tìm thấy tin đăng.');
+    await ref.set({ created: now() });
+  } else await ref.delete();
+  return { saved: body.saved };
 }

@@ -1,23 +1,22 @@
-import { categories, conditions, schools } from './data.js';
-import { $, html, icon, productPath, sellerPath, categoryName } from './views.js';
-import { tagsFor } from './tags.js';
+import { categories, conditions, schools } from './catalog/data.js';
+import { $, html, icon, productPath, sellerPath, categoryName, moreTags } from './views.js';
+import { tagsFor } from './catalog/tags.js';
 
-const button=(title,action,id='',style='secondary')=>`<button type="button" class="button ${style}" data-action="${action}" data-id="${html(id)}">${title}</button>`;
+export const button=(title,action,id='',style='secondary')=>`<button type="button" class="button ${style}" data-action="${action}" data-id="${html(id)}">${title}</button>`;
 const field=(label,name,value='',attributes='')=>`<label>${label}<input name="${name}" value="${html(value)}" ${attributes}></label>`;
 const textarea=(label,name,value='',attributes='')=>`<label>${label}<textarea name="${name}" ${attributes}>${html(value)}</textarea></label>`;
 const select=(label,name,items,selected)=>`<label>${label}<select name="${name}" required>${items.map(choice=>{
   const [value,title]=Array.isArray(choice)?choice:[choice,choice];
   return `<option value="${html(value)}" ${value===selected?'selected':''}>${html(title)}</option>`;
 }).join('')}</select></label>`;
-const form=(name,content,submit)=>`<form data-form="${name}">${content}<p class="form-error" role="alert" hidden></p><button class="button primary" type="submit">${submit}</button></form>`;
-const statusNames={pending:'Chờ duyệt',active:'Đang hiển thị',hidden:'Đã ẩn',rejected:'Cần chỉnh sửa',sold:'Đã trao tay',open:'Đang trao đổi',completed:'Đã hoàn tất',cancelled:'Đã hủy'};
+const form=(name,content,submit)=>`<form method="post" data-form="${name}">${content}<p class="form-error" role="alert" hidden></p><button class="button primary" type="submit">${submit}</button></form>`;
+export const statusNames={pending:'Chờ duyệt',active:'Đang hiển thị',hidden:'Đã ẩn',rejected:'Cần chỉnh sửa',sold:'Đã trao tay',open:'Đang trao đổi',completed:'Đã hoàn tất',cancelled:'Đã hủy'};
 const reportNames={site:'Nền tảng',listing:'Tin đăng',review:'Đánh giá',trade:'Giao dịch',appeal:'Kháng nghị'};
-const demoNames={seller:'Người bán thử',buyer:'Người mua thử',moderator:'Kiểm duyệt thử'};
-
 function tagOptions(category, selected=[]) {
-  return tagsFor(category).map(({id,label})=>
-    `<label><input type="checkbox" name="tags" value="${id}" ${selected.includes(id)?'checked':''}> <span>${html(label)}</span></label>`
-  ).join('');
+  const tags=tagsFor(category);
+  const featured=[...new Set([...tags.filter(tag=>selected.includes(tag.id)),...tags.slice(0,3)])];
+  const render=({id,label})=>`<label><input type="checkbox" name="tags" value="${id}" ${selected.includes(id)?'checked':selected.length>=3?'disabled':''}> <span>${html(label)}</span></label>`;
+  return featured.map(render).join('')+moreTags(tags.filter(tag=>!featured.includes(tag)),render);
 }
 
 async function jpeg(file) {
@@ -36,69 +35,86 @@ async function jpeg(file) {
   }finally {image.close();}
 }
 
-export function createWorkflows({api,notify,getSession,setProfile,refresh}) {
+const emailInput=field('Email','email','','type="email" autocomplete="email" placeholder="ban@example.com" maxlength="254" required');
+const passwordField=(title,name,attributes)=>`<div class="password-field">${field(title,name,'',attributes)}<button class="bare" type="button" data-action="toggle-password" aria-pressed="false" aria-label="Hiện ${title.toLowerCase()}">Hiện</button></div>`;
+const passwordInput=passwordField('Mật khẩu','password','type="password" autocomplete="current-password" placeholder="Nhập mật khẩu của bạn" maxlength="128" required');
+
+export function loginForm() {
+  return form('login',emailInput+passwordInput+`<div class="auth-help">${button('Quên mật khẩu?','reset-password','','quiet')}${button('Gửi lại email xác nhận','resend','','quiet')}</div>`,'Đăng nhập');
+}
+
+export function registrationForm() {
+  return form('register',field('Họ và tên','fullName','','required minlength="2" maxlength="100" autocomplete="name" placeholder="Nhập họ và tên của bạn"')+
+    emailInput+passwordField('Mật khẩu','password','type="password" autocomplete="new-password" placeholder="Tạo mật khẩu từ 12 ký tự" required minlength="12" maxlength="128"')+
+    passwordField('Xác nhận mật khẩu','passwordConfirmation','type="password" autocomplete="new-password" placeholder="Nhập lại mật khẩu" required minlength="12" maxlength="128"')+
+    '<fieldset class="student-fields"><legend>Thông tin học sinh</legend><p>Tên hiển thị và trường có thể xuất hiện trên gian hàng. RE:CLASS giữ riêng các thông tin xác minh khác.</p><div class="profile-fields">'+
+    field('Ngày tháng năm sinh','birthDate','','type="date" required autocomplete="bday"')+
+    field('Số điện thoại','phone','','type="tel" required minlength="8" maxlength="25" autocomplete="tel"')+
+    field('Mã số học sinh','studentNumber','','required maxlength="50" autocomplete="off"')+
+    select('Trường THPT','school',[['','Chọn trường của bạn'],...schools],'')+
+    '</div>'+field('Tên hiển thị','name','','required minlength="2" maxlength="45" autocomplete="nickname"')+
+    '<label>Ảnh giấy tờ tùy thân<input type="file" name="identityPhoto" accept="image/jpeg,image/png,image/webp" required><small>JPEG, PNG hoặc WebP. Tối đa 4 MB.</small></label></fieldset>'+
+    button('Quyền riêng tư','privacy','','quiet'),'Tạo tài khoản');
+}
+
+export function editProfileForm(profile) {
+  return form('profile','<div class="profile-fields">'+field('Tên hiển thị','name',profile.name,'required minlength="2" maxlength="45" autocomplete="nickname"')+
+    field('Tên gian hàng','shop',profile.shop,'required minlength="2" maxlength="65"')+
+    (profile.verified?`<label>Trường THPT<input value="${html(profile.school)}" readonly></label>`:select('Trường THPT','school',schools,profile.school))+
+    '</div>'+textarea('Giới thiệu (không bắt buộc)','bio',profile.bio,'maxlength="350"'),'Lưu hồ sơ');
+}
+
+export function createWorkflows({api,notify,getSession,setProfile,refresh,refreshAccount}) {
   const dialog=$('#dialog');
-  let modal={};
+  let modal={}, live;
   function open(title,body,context={}) {
+    live?.close();
+    live=undefined;
     modal=context;
     dialog.innerHTML=`<button type="button" class="dialog-close" data-action="close" aria-label="Đóng">${icon('close')}</button><h2 id="dialog-title">${title}</h2>${body}`;
     if (!dialog.open) dialog.showModal();
     if (dialog.contains(document.activeElement)) return;
     dialog.querySelector('.dialog-close').focus();
   }
+  dialog.addEventListener('close',()=>{
+    if (dialog.open) return;
+    live?.close();
+    live=undefined;
+    modal={};
+    dialog.replaceChildren();
+  });
   function message(title,text,actions='') {
     open(title,text+(actions?'<div class="row-actions dialog-stack">'+actions+'</div>':''));
   }
   function showSample() {
     message('Tin đăng minh họa','<p>Món đồ này giúp bạn xem cách RE:CLASS hiển thị tin đăng. Bạn có thể xem thêm hoặc thử đăng một món đồ của mình.</p>',button('Đăng tin miễn phí','post','','primary'));
   }
-  function signIn() {
-    const session=getSession();
-    if (!session) return message('Đang kết nối','<p>RE:CLASS đang tải thông tin tài khoản. Hãy thử lại sau một chút.</p>');
-    if (session.local) {
-      return message('Tài khoản thử nghiệm','<p>Chọn một tài khoản để thử luồng người mua, người bán hoặc kiểm duyệt.</p>',session.demoAccounts.map(id=>button(demoNames[id],'demo',id)).join(''));
-    }
-    const back=location.pathname+location.search;
-    message('Đăng nhập RE:CLASS','<p>Đăng nhập để tạo hồ sơ học sinh, lưu thông tin gian hàng và tham gia trao đổi.</p>',
-      '<a class="button primary" href="/signin-with-chatgpt?return_to='+encodeURIComponent(back)+'" target="_top">Đăng nhập với ChatGPT</a>');
+  function signIn(resend=false) {
+    open(resend?'Gửi lại liên kết xác nhận':'Đăng nhập RE:CLASS',
+      (resend?form('resend',emailInput+passwordInput,'Gửi liên kết'):loginForm())+
+      `<div class="row-actions dialog-stack">${resend?button('Về đăng nhập','sign-in'):'<a class="button secondary" href="/dang-ky">Tạo tài khoản</a>'}</div>`);
   }
   function profileForm() {
     const profile=getSession()?.profile;
-    open(profile?'Chỉnh sửa hồ sơ':'Tạo hồ sơ học sinh','<p>Chọn tên hiển thị và trường của bạn. Tên hiển thị và tên trường sẽ xuất hiện trong gian hàng sau khi xác minh.</p>'+
-      form('profile',field('Tên hiển thị','name',profile?.name,'required minlength="2" maxlength="45" autocomplete="nickname"')+
-      field('Tên gian hàng','shop',profile?.shop,'required minlength="2" maxlength="65"')+
-      (profile?.verified?'<p>'+html(profile.school)+'</p>':select('Trường THPT','school',[['','Chọn trường của bạn'],...schools],profile?.school??''))+
-      textarea('Giới thiệu (không bắt buộc)','bio',profile?.bio,'maxlength="350"'),'Lưu hồ sơ'));
+    if (!profile) return signIn();
+    open('Chỉnh sửa hồ sơ',editProfileForm(profile));
   }
   function verify() {
-    open('Xác minh học sinh','<p>Nhập mã dùng một lần do đầu mối đã được chấp thuận của trường bạn cung cấp. Mã gắn với trường trong hồ sơ. Hãy giữ riêng mã học sinh và giấy tờ cá nhân.</p>'+
+    open('Xác minh học sinh','<p>Nhập mã dùng một lần do đầu mối đã được chấp thuận của trường bạn cung cấp. Mã gắn với trường trong hồ sơ.</p>'+
       form('verify',field('Mã xác minh','code','','required minlength="8" maxlength="50" autocomplete="off"'),'Xác minh'));
   }
   function profileRequired(requireVerification=false) {
     const session=getSession();
     if (!session?.signed) {signIn();return false;}
-    if (!session.profile) {profileForm();return false;}
+    if (!session.profile) {signIn();return false;}
     if (requireVerification&&!session.profile.verified) {verify();return false;}
     return true;
   }
-  async function account(){
-    const session=getSession();
-    if (!session?.signed) return signIn();
-    if (!session.profile) return profileForm();
-    const profile=session.profile;
-    const data=await api('/api/dashboard');
-    const listings=data.listings.map(item=>`<article class="inline-box"><h3><a href="${productPath(item.id)}">${html(item.title)}</a></h3><p>${statusNames[item.status]}${item.reason?' · '+html(item.reason):''}</p>
-      <div class="row-actions">${item.status!=='sold'?button('Sửa tin','edit',item.id):''}
-      ${['active','pending'].includes(item.status)?button('Ẩn tin','listing-hide',item.id):''}
-      ${item.status==='hidden'?button('Gửi lại để duyệt','listing-submit',item.id):''}
-      ${item.status==='rejected'?button('Gửi kháng nghị','appeal',item.id):''}</div></article>`).join('');
-    const trades=data.trades.map(trade=>`<article class="inline-box"><h3>${html(trade.title)}</h3><p>${html(trade.buyer_id===profile.id?trade.seller:trade.buyer)} · ${statusNames[trade.status]}</p><div class="row-actions">${button('Mở giao dịch','trade',trade.id)}</div></article>`).join('');
-    open('Tài khoản RE:CLASS',`<p><strong>${html(profile.name)}</strong> · ${html(profile.school)}<br>${profile.verified?'Đã xác minh học sinh':'Chưa xác minh học sinh'}</p>
-      <div class="row-actions dialog-stack">${button('Sửa hồ sơ','edit-profile')}${profile.verified?'<a class="button secondary" href="'+sellerPath(profile.id)+'">Gian hàng của mình</a>':button('Nhập mã xác minh','verify','','primary')}
-      <a class="button secondary" href="/da-luu">Tin đã lưu</a>${profile.moderator?button('Bảng kiểm duyệt','moderation'):button('Quyền kiểm duyệt','claim')}</div>
-      <div class="dialog-stack"><h3>Tin của bạn</h3>${listings||'<p>Chưa có tin đăng.</p>'}${button('Đăng tin miễn phí','post','','primary')}</div>
-      <div class="dialog-stack"><h3>Giao dịch & tin nhắn</h3>${trades||'<p>Chưa có giao dịch nào.</p>'}</div>
-      <div class="row-actions dialog-stack">${session.local?session.demoAccounts.filter(id=>id!==session.activeDemo).map(id=>button(demoNames[id],'demo',id)).join('')+button('Đăng xuất','demo','sign-out'):'<a class="button quiet" href="/signout-with-chatgpt?return_to=%2F" target="_top">Đăng xuất</a>'}</div>`);
+  async function account(page='/tai-khoan') {
+    if (location.pathname.startsWith('/tai-khoan')) {
+      dialog.close();
+      await refreshAccount();
+    } else location.assign(getSession()?.signed?page:'/dang-nhap');
   }
   async function post(id) {
     if (!profileRequired(true)) return;
@@ -117,22 +133,82 @@ export function createWorkflows({api,notify,getSession,setProfile,refresh}) {
       textarea('Cách giao nhận','delivery',item.delivery,'required minlength="8" maxlength="350" placeholder="Ví dụ: Hẹn ở khu vực công cộng gần trường"')+
       `<label>Ảnh món đồ<input type="file" name="photos" accept="image/*" multiple ${id?'':'required'}></label>`,'Gửi tin để duyệt'),{id});
   }
+  function watch(path, update, status=()=>{}) {
+    const source=new EventSource(path);
+    const context=modal;
+    let pending=false, changed=false;
+    live=source;
+    source.onopen=()=>status('Cập nhật trực tiếp');
+    source.onerror=()=>status(source.readyState===EventSource.CLOSED?'Kết nối đã đóng. Mở lại để kết nối.':'Đang kết nối lại…');
+    source.addEventListener('change',async()=>{
+      changed=true;
+      if (pending) return;
+      pending=true;
+      try {
+        while (changed && modal===context && dialog.open) {
+          changed=false;
+          await update(context);
+        }
+      } catch (error) { if (modal===context && dialog.open) status(error.message); }
+      finally { pending=false; }
+    });
+  }
+  async function inbox() {
+    if (!profileRequired()) return;
+    const render=trades=>{
+      const profile=getSession().profile;
+      $('#inbox-threads').innerHTML=trades.map(trade=>`<article class="inline-box"><h3>${html(trade.title)}</h3><p>${html(trade.buyer_id===profile.id?trade.seller:trade.buyer)} · ${statusNames[trade.status]}</p><div class="row-actions">${button('Mở tin nhắn','trade',trade.id)}</div></article>`).join('')||'<p>Chưa có giao dịch nào.</p>';
+    };
+    const trades=await api('/api/inbox');
+    open('Tin nhắn','<p class="chat-status" role="status">Đang kết nối…</p><div id="inbox-threads" class="dialog-stack"></div>'+button('Về tài khoản','account'));
+    render(trades);
+    watch('/api/inbox/events',async context=>{
+      const next=await api('/api/inbox');
+      if (modal===context && dialog.open) render(next);
+    },text=>{dialog.querySelector('.chat-status').textContent=text;});
+  }
   async function tradeView(id) {
-    const {trade,messages}=await api('/api/trades/'+encodeURIComponent(id));
+    showTrade(await api('/api/trades/'+encodeURIComponent(id)));
+  }
+  function showTrade({trade,messages},draft='') {
+    const id=trade.id;
     const me=getSession().profile.id;
     const confirmed=trade.buyer_id===me?trade.buyer_done:trade.seller_done;
-    const sent=messages.map(item=>`<article class="inline-box trade-message"><strong>${html(item.name)}</strong><p class="preserve-lines">${html(item.body)}</p></article>`).join('');
     const canReview=trade.status==='completed'&&trade.buyer_id===me&&!trade.review_id;
-    const messageForm=form('message',textarea('Tin nhắn','text','','required maxlength="1000"'),'Gửi tin nhắn');
+    const messageForm=form('message',textarea('Tin nhắn','text',draft,'required maxlength="1000"'),'Gửi tin nhắn');
     const reviewForm=form('review',select('Điểm đánh giá','rating',[['','Chọn điểm'],...[5,4,3,2,1].map(value=>[String(value),value+' sao'])],'')+
       textarea('Đánh giá người bán','text','','required minlength="5" maxlength="700"'),'Gửi đánh giá');
+    const conversationState=value=>[value.status,!!value.buyer_done,!!value.seller_done,value.review_id].join('/');
+    let renderedMessages;
+    const renderMessages=(entries,force=false)=>{
+      const log=$('#chat-log');
+      const messageIds=entries.map(item=>item.id).join('/');
+      if (messageIds===renderedMessages) {if (force) log.scrollTop=log.scrollHeight; return;}
+      renderedMessages=messageIds;
+      const nearBottom=log.scrollHeight-log.scrollTop-log.clientHeight<50;
+      log.innerHTML=entries.map(item=>`<article class="inline-box trade-message${item.sender_id===me?' is-mine':''}">
+        <strong>${html(item.name)}</strong><time datetime="${html(item.created)}">${html(new Date(item.created).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}))}</time>
+        <p class="preserve-lines">${html(item.body)}</p></article>`).join('')||'<p>Chưa có tin nhắn. Hãy gửi lời chào và thống nhất cách giao nhận.</p>';
+      if (force||nearBottom) log.scrollTop=log.scrollHeight;
+    };
+    const context={id,receive(next,force){
+      if (conversationState(next.trade)!==conversationState(trade)) {
+        const draft=dialog.querySelector('[data-form=message] textarea')?.value;
+        showTrade(next,draft);
+      } else renderMessages(next.messages,force);
+    }};
     open('Trao đổi món đồ',`<p><a href="${productPath(trade.listing_id)}"><strong>${html(trade.title)}</strong></a> · ${statusNames[trade.status]}</p>
       <p class="small-note">Giữ thông tin cá nhân ở riêng. Hẹn trao đổi tại một địa điểm công cộng.</p>
-      <div class="dialog-stack">${sent||'<p>Chưa có tin nhắn. Hãy gửi lời chào và thống nhất cách giao nhận.</p>'}</div>
+      <p class="chat-status" role="status">Đang kết nối…</p><div id="chat-log" class="chat-log" role="log" aria-label="Tin nhắn giao dịch" tabindex="0"></div>
       ${trade.status==='open'?messageForm+'<p class="small-note">'+(confirmed?'Bạn đã xác nhận. Giao dịch hoàn tất khi cả hai bên xác nhận.':'Chỉ xác nhận sau khi đã giao nhận món đồ.')+'</p>':''}
       ${canReview?reviewForm:trade.review_id?'<p>Giao dịch đã có đánh giá.</p>':''}
       <div class="row-actions dialog-stack">${trade.status==='open'?(!confirmed?button('Xác nhận đã trao tay','trade-confirm',id,'primary'):'')+button('Hủy giao dịch','trade-cancel',id):''}
-      ${button('Làm mới','trade',id)}${button('Báo cáo','report-trade',id)}${button('Về tài khoản','account')}</div>`,{id});
+      ${button('Báo cáo','report-trade',id)}${button('Về tin nhắn','inbox')}</div>`,context);
+    renderMessages(messages,true);
+    watch('/api/trades/'+encodeURIComponent(id)+'/events',async active=>{
+      const next=await api('/api/trades/'+encodeURIComponent(id));
+      if (modal===active && dialog.open) active.receive(next);
+    },text=>{dialog.querySelector('.chat-status').textContent=text;});
   }
   function report(kind,id) {
     if (!profileRequired()) return;
@@ -157,18 +233,30 @@ export function createWorkflows({api,notify,getSession,setProfile,refresh}) {
     about:['Về RE:CLASS','<p>Chúng mình là một nhóm học sinh THPT muốn việc trao đổi sách, đồng phục và dụng cụ học tập trở nên dễ dàng hơn. Mỗi lần một món đồ đến tay người cần, món đó lại có thêm một vòng đời.</p><p>RE:CLASS tập trung vào đồ học đường, với hồ sơ học sinh đã xác minh, quy chuẩn tin đăng và đánh giá từ các giao dịch đã xác nhận.</p>'],
     safety:['Giao dịch an toàn','<p>Kiểm tra ảnh, tình trạng và hồ sơ người bán. Chọn nơi công cộng phù hợp để gặp và kiểm tra món đồ trước khi nhận. Chỉ xác nhận khi đã hoàn tất trao đổi.</p><p>Giữ riêng số điện thoại, địa chỉ nhà, lịch học và giấy tờ học sinh. Báo cáo tin đăng, tin nhắn hoặc đánh giá có dấu hiệu vi phạm.</p>'],
     rules:['Quy chuẩn đăng tin','<p>RE:CLASS tiếp nhận sách và tài liệu, đồng phục, dụng cụ học tập, phụ kiện học đường và đồ dùng ngoại khóa phù hợp. Mỗi tin cần ảnh thật, giá, tình trạng và cách giao nhận.</p><p>Tin ngoài phạm vi học đường, hàng không rõ nguồn gốc và đồ vật nguy hiểm sẽ bị từ chối. Đội ngũ duyệt nội dung tin đăng. Hãy kiểm tra món đồ trước khi nhận.</p>'],
-    privacy:['Quyền riêng tư','<p>Gian hàng hiển thị tên bạn chọn, trường, trạng thái xác minh, sản phẩm và đánh giá. Mã xác minh dùng một lần được lưu dưới dạng băm. Hãy giữ riêng mã số học sinh và giấy tờ cá nhân.</p><p>Tin nhắn chỉ hiển thị cho hai bên giao dịch. Báo cáo do đội kiểm duyệt xử lý. Chủ đề giao diện và tin đã lưu được giữ trên trình duyệt này.</p>']
+    privacy:['Quyền riêng tư','<p>Gian hàng hiển thị tên bạn chọn, trường, trạng thái xác minh, sản phẩm và đánh giá. Họ và tên, ngày sinh, số điện thoại, mã số học sinh và ảnh giấy tờ bạn gửi khi đăng ký được lưu riêng trên máy chủ.</p><p>Tin nhắn chỉ hiển thị cho hai bên giao dịch. Báo cáo do đội kiểm duyệt xử lý. Cookie giữ phiên đăng nhập trên thiết bị này. Tin đã lưu khi đăng nhập đi theo tài khoản của bạn.</p>']
   };
-  async function handle(action,id) {
+  async function handle(action,id,trigger) {
     if (Object.hasOwn(info,action)) {message(...info[action]);return;}
     if (action==='close') return dialog.close();
     if (action==='account') return account();
+    if (action==='sign-in'||action==='resend') return signIn(action==='resend');
+    if (action==='register') return location.assign('/dang-ky');
+    if (action==='toggle-password') {
+      const input=trigger.parentElement.querySelector('input');
+      const shown=input.type==='password';
+      input.type=shown?'text':'password';
+      trigger.textContent=shown?'Ẩn':'Hiện';
+      trigger.setAttribute('aria-pressed',shown);
+      return;
+    }
+    if (action==='reset-password') return open('Đặt lại mật khẩu',form('reset-password',emailInput,'Gửi liên kết')+button('Về đăng nhập','sign-in'));
+    if (action==='sign-out') {await api('/api/logout',{});location.assign('/');return;}
+    if (action==='inbox') return inbox();
     if (action==='edit-profile') return profileForm();
     if (action==='verify') return verify();
     if (action==='post'||action==='edit') return post(id);
     if (action==='moderation') return moderation();
     if (action==='claim') return open('Quyền kiểm duyệt','<p>Nhập mã quản trị của đợt thử nghiệm.</p>'+form('claim',field('Mã quản trị','code','','type="password" minlength="8" maxlength="100" required'),'Kích hoạt quyền'));
-    if (action==='demo') {await api('/dev/account?as='+encodeURIComponent(id),{});location.reload();return;}
     if (action==='contact') {
       if (!profileRequired(true)) return;
       const trade=await api('/api/trades',{listingId:id});
@@ -184,7 +272,7 @@ export function createWorkflows({api,notify,getSession,setProfile,refresh}) {
     if (Object.hasOwn(reportTypes,action)) return report(reportTypes[action],id);
     if (action==='listing-hide'||action==='listing-submit') {
       await api('/api/listings/'+encodeURIComponent(id)+'/status',{action:action.slice(8)});
-      await refresh();return account();
+      return account('/tai-khoan/tin-dang');
     }
     if (action==='reject'||action==='remove') return open(action==='reject'?'Yêu cầu chỉnh sửa':'Gỡ tin đăng',
       form('moderate',textarea('Lý do','reason','','required minlength="5" maxlength="400"'),'Xác nhận'),{id,op:action});
@@ -207,22 +295,47 @@ export function createWorkflows({api,notify,getSession,setProfile,refresh}) {
       tags.forEach(input=>{input.disabled=full&&!input.checked;});
     }
   });
-  dialog.addEventListener('submit',async event=>{
+  document.addEventListener('submit',async event=>{
     const current=event.target;
     if (!current.dataset.form) return;
     event.preventDefault();
     const data=new FormData(current);
     const kind=current.dataset.form;
+    const inline=!dialog.contains(current);
     const context=modal;
     const err=current.querySelector('.form-error');
     const submit=current.querySelector('[type=submit]');
     submit.disabled=true;err.hidden=true;
     try {
-      if (kind==='profile'||kind==='verify'||kind==='claim') {
+      if (kind==='register') {
+        if (data.get('password')!==data.get('passwordConfirmation')) throw new Error('Hai mật khẩu chưa khớp.');
+        data.delete('passwordConfirmation');
+        const photo=data.get('identityPhoto');
+        if (!photo?.size||photo.size>4000000) throw new Error('Hãy chọn một ảnh giấy tờ tối đa 4 MB.');
+        await api('/api/register',data);
+        if (current.isConnected) {
+          current.reset();
+          message('Kiểm tra email','<p>Nếu địa chỉ đủ điều kiện, bạn sẽ nhận được liên kết xác nhận. Sau khi xác nhận, hãy đăng nhập để dùng RE:CLASS.</p>','<a class="button primary" href="/dang-nhap">Về đăng nhập</a>'+button('Gửi lại liên kết','resend'));
+        }
+      } else if (kind==='login'||kind==='resend') {
+        await api('/api/login',{...Object.fromEntries(data),resend:kind==='resend'});
+        if (kind==='login') {
+          if (inline&&location.pathname==='/dang-nhap') {
+            const next=new URLSearchParams(location.search).get('tiep');
+            location.replace(next==='/gio-hang'?next:'/tai-khoan');
+          } else location.reload();
+        }
+        else if (modal===context && dialog.open) message('Kiểm tra email','<p>Hãy mở liên kết xác nhận trước khi đăng nhập.</p>',button('Về đăng nhập','sign-in'));
+      } else if (kind==='reset-password') {
+        await api('/api/reset-password',Object.fromEntries(data));
+        if (modal===context && dialog.open) message('Kiểm tra email','<p>Nếu email đã đăng ký, bạn sẽ nhận được liên kết đặt lại mật khẩu.</p>',button('Về đăng nhập','sign-in'));
+      } else if (kind==='profile'||kind==='verify'||kind==='claim') {
         const path={profile:'/api/profile',verify:'/api/verify',claim:'/api/moderation/claim'}[kind];
         setProfile(await api(path,Object.fromEntries(data)));
         if (kind==='verify') notify('Đã xác minh hồ sơ học sinh.');
-        await account();
+        if (kind==='profile') notify('Đã lưu hồ sơ.');
+        if ((kind==='verify'||kind==='claim')&&location.pathname==='/gio-hang') dialog.close();
+        else await account();
       } else if (kind==='listing') {
         const files=data.getAll('photos').filter(file=>file.size);
         if (files.length>3) throw new Error('Hãy chọn tối đa 3 ảnh.');
@@ -230,11 +343,20 @@ export function createWorkflows({api,notify,getSession,setProfile,refresh}) {
         for (const file of files) data.append('photos',await jpeg(file),'listing.jpg');
         await api('/api/listings'+(context.id?'/'+encodeURIComponent(context.id):''),data);
         notify('Đã gửi tin vào hàng chờ kiểm duyệt.');
-        await refresh();await account();
-      } else if (['message','review','trade-state'].includes(kind)) {
-        await api('/api/trades/'+encodeURIComponent(context.id),{action:kind==='trade-state'?context.op:kind,...Object.fromEntries(data)});
+        await refresh();await account('/tai-khoan/tin-dang');
+      } else if (kind==='message') {
+        const text=current.elements.namedItem('text');
+        const draft=text.value;
+        context.pendingMessage ||= {};
+        if (context.pendingMessage.text!==draft) context.pendingMessage={text:draft,id:crypto.randomUUID()};
+        const next=await api('/api/trades/'+encodeURIComponent(context.id),{action:'message',text:draft,messageId:context.pendingMessage.id});
+        context.pendingMessage={};
+        if (text.value===draft) text.value='';
+        if (modal===context && dialog.open) context.receive(next,true);
+      } else if (kind==='review'||kind==='trade-state') {
+        const next=await api('/api/trades/'+encodeURIComponent(context.id),{action:kind==='trade-state'?context.op:kind,...Object.fromEntries(data)});
         if(kind==='review') notify('Đã gửi đánh giá.');
-        await tradeView(context.id);
+        if (modal===context && dialog.open) showTrade(next);
       } else if (kind==='report') {
         await api('/api/reports',{kind:context.kind,target:context.id,body:data.get('body')});
         dialog.close();notify('Đã gửi đến đội kiểm duyệt.');
@@ -248,5 +370,5 @@ export function createWorkflows({api,notify,getSession,setProfile,refresh}) {
     }catch(error){if(current.isConnected){err.textContent=error.message;err.hidden=false;}else notify(error.message);}
     finally{submit.disabled=false;}
   });
-  return {handle,showSample,showLink:link=>message('Chia sẻ tin đăng','<label>Đường dẫn<input readonly value="'+html(link)+'"></label>')};
+  return {handle,showSample,profileRequired,showLink:link=>message('Chia sẻ tin đăng','<label>Đường dẫn<input readonly value="'+html(link)+'"></label>')};
 }

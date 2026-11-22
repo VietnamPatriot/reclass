@@ -8,6 +8,7 @@
   <title>RE:CLASS · Chợ đồ học đường</title>
   <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/account.css">
   <link rel="modulepreload" href="/app.js">
   <script src="/theme.js"></script>
   <script type="module" src="/app.js"></script>
@@ -17,20 +18,23 @@
   <a class="skip" href="#main">Bỏ qua đến nội dung</a>
   <header class="site-header">
     <div class="wrap header-row">
-      <a href="/" class="brand" aria-label="RE:CLASS, trang chủ"><strong>RE:CLASS</strong><small>CHUYỂN ĐỒ CŨ · TIẾP VÒNG MỚI</small></a>
+      <a href="/" class="brand" aria-label="RE:CLASS, trang chủ"><strong>RE:CLASS</strong><small>CHUYỂN ĐỒ CŨ · TIẾP ƯỚC MƠ</small></a>
       <nav aria-label="Điều hướng chính">
         <a href="/">Trang chủ</a><a href="/kham-pha">Khám phá</a><a href="/#cach-hoat-dong">Cách hoạt động</a><a href="/#ve-chung-toi">Về chúng tôi</a>
       </nav>
       <div class="header-actions">
         <div class="theme" role="group" aria-label="Giao diện"><button type="button" data-theme-choice="light" aria-label="Giao diện sáng"></button><button type="button" data-theme-choice="dark" aria-label="Giao diện tối"></button></div>
-        <button class="button quiet account-trigger" data-action="account">Đăng nhập</button>
-        <button class="button primary post-trigger" data-action="post">Đăng tin miễn phí <span aria-hidden="true">＋</span></button>
+        <div class="header-session">
+          <a class="button quiet header-cart" href="/gio-hang" aria-label="Giỏ hàng"><span class="cart-icon" aria-hidden="true"></span><span class="cart-count" aria-hidden="true" hidden></span></a>
+          <a class="button quiet account-trigger" href="/dang-nhap" aria-label="Tài khoản"><span class="account-icon" aria-hidden="true"></span><span class="account-label">Tài khoản</span></a>
+          <button class="button quiet" type="button" data-action="inbox" aria-label="Tin nhắn" hidden><span class="inbox-icon" aria-hidden="true"></span><span class="account-label">Tin nhắn</span></button>
+        </div>
       </div>
     </div>
     <div class="wrap search-row">
       <div class="search-box">
         <span class="search-icon" aria-hidden="true"></span>
-        <input type="search" id="search" aria-label="Tìm đồ học đường" placeholder="Tìm sách Toán 12" maxlength="100" autocomplete="off" aria-autocomplete="list" aria-controls="search-options" aria-expanded="false" role="combobox">
+        <input type="search" id="search" aria-label="Tìm đồ học đường" placeholder="Tìm sách Toán 12, máy tính Casio, đồng phục, dụng cụ học tập…" maxlength="100" autocomplete="off" enterkeyhint="search" aria-autocomplete="list" aria-controls="search-options" aria-expanded="false" role="combobox">
         <span class="school-filter"><select id="school-filter" aria-label="Lọc theo trường"><option value="">Mọi trường</option></select></span>
       </div>
       <div id="search-results" class="search-results" hidden>
